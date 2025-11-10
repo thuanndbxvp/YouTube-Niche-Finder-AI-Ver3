@@ -2,9 +2,8 @@
 
 
 
-
 import React from 'react';
-import type { AnalysisResult, Niche, ContentPlanResult } from '../types';
+import type { AnalysisResult, Niche } from '../types';
 import NicheCard from './NicheCard';
 import { PlusCircleIcon } from './icons/Icons';
 
@@ -18,7 +17,6 @@ interface ResultsDisplayProps {
   onUseNiche: (niche: Niche) => void;
   onViewPlan: (niche: Niche) => void;
   generatingNiches: Set<string>;
-  contentPlanCache: Record<string, ContentPlanResult>;
   numResults: string;
   onGenerateVideoIdeas: (niche: Niche) => void;
   generatingVideoIdeas: Set<string>;
@@ -31,7 +29,7 @@ interface ResultsDisplayProps {
   channelPlanCache: Record<string, string>;
 }
 
-const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, onDevelop, analysisDepth, onLoadMore, isLoadingMore, savedNiches, onUseNiche, onViewPlan, generatingNiches, contentPlanCache, numResults, onGenerateVideoIdeas, generatingVideoIdeas, onExportVideoIdeas, onExportNiche, isDirectAnalysis, theme, onGenerateChannelPlan, generatingChannelPlan, channelPlanCache }) => {
+const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, onDevelop, analysisDepth, onLoadMore, isLoadingMore, savedNiches, onUseNiche, onViewPlan, generatingNiches, numResults, onGenerateVideoIdeas, generatingVideoIdeas, onExportVideoIdeas, onExportNiche, isDirectAnalysis, theme, onGenerateChannelPlan, generatingChannelPlan, channelPlanCache }) => {
   
   const numToAdd = parseInt(numResults, 10);
 
@@ -39,7 +37,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, onDevelop, anal
     <div className="w-full flex flex-col gap-8 mt-6">
       {result.niches.map((niche, index) => {
         const isSaved = savedNiches.some(saved => saved.niche_name.original === niche.niche_name.original);
-        const hasContentPlan = !!contentPlanCache[niche.niche_name.original];
         const isGenerating = generatingNiches.has(niche.niche_name.original);
         const isGeneratingIdeas = generatingVideoIdeas.has(niche.niche_name.original);
         const isGeneratingPlan = generatingChannelPlan.has(niche.niche_name.original);
@@ -54,7 +51,6 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, onDevelop, anal
               onUseNiche={onUseNiche}
               onViewPlan={onViewPlan}
               isGeneratingContent={isGenerating}
-              hasContentPlan={hasContentPlan}
               onGenerateVideoIdeas={onGenerateVideoIdeas}
               isGeneratingIdeas={isGeneratingIdeas}
               onExportVideoIdeas={onExportVideoIdeas}

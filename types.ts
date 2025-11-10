@@ -50,6 +50,7 @@ export interface Niche {
   content_strategy: string;
   video_ideas?: VideoIdea[];
   channel_plan_content?: string;
+  detailed_content_plan?: ContentPlanResult;
 }
 
 export interface AnalysisResult {

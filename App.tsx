@@ -135,7 +135,6 @@ const App: React.FC = () => {
   const [isContentPlanModalOpen, setIsContentPlanModalOpen] = useState<boolean>(false);
   const [generatingNiches, setGeneratingNiches] = useState<Set<string>>(new Set());
   const [generatingVideoIdeas, setGeneratingVideoIdeas] = useState<Set<string>>(new Set());
-  const [contentPlanCache, setContentPlanCache] = useState<Record<string, ContentPlanResult>>({});
   const [activeNicheForContentPlan, setActiveNicheForContentPlan] = useState<Niche | null>(null);
   const [isContentPlanLoadingMore, setIsContentPlanLoadingMore] = useState<boolean>(false);
   
@@ -287,7 +286,6 @@ const App: React.FC = () => {
         setSavedNiches([]);
         setTrainingChatHistory(defaultTrainingHistory);
         setChannelPlanCache({});
-        setContentPlanCache({});
       }
     });
 
@@ -438,7 +436,8 @@ const App: React.FC = () => {
         );
         const [insertResult, ...updateResults] = await Promise.all([insertPromise, ...updatePromises]);
         if (insertResult && (insertResult as any).error) throw (insertResult as any).error;
-        updateResults.forEach(res => { if (res.error) throw res.error; });
+        // Fix: Cast Supabase response to `any` to access the `error` property, consistent with the line above.
+        updateResults.forEach(res => { if ((res as any)?.error) throw (res as any).error; });
       } catch (error: any) {
         console.error("Error auto-saving niches to Supabase:", error);
         setNotifications(prev => [...prev, { id: Date.now(), message: 'Lỗi đồng bộ dữ liệu với cloud.', type: 'error' }]);
@@ -741,7 +740,15 @@ const App: React.FC = () => {
           setActiveApiKeyIndex(null);
         }
         
-        setContentPlanCache(prevCache => ({ ...prevCache, [nicheName]: result }));
+        const nicheWithPlan = { ...niche, detailed_content_plan: result };
+        setAnalysisResult(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                niches: prev.niches.map(n => n.niche_name.original === nicheName ? nicheWithPlan : n)
+            };
+        });
+        await autoSaveOrUpdateNiches([nicheWithPlan]);
         
         setNotifications(prev => [...prev, { id: Date.now(), message: `Đã phát triển xong 5 ý tưởng ban đầu cho niche: "${niche.niche_name.translated}"`, type: 'success' }]);
 
@@ -760,9 +767,9 @@ const App: React.FC = () => {
   };
 
   const handleViewPlan = (niche: Niche) => {
-    const cachedPlan = contentPlanCache[niche.niche_name.original];
-    if (cachedPlan) {
-        setContentPlan(cachedPlan);
+    const plan = niche.detailed_content_plan;
+    if (plan) {
+        setContentPlan(plan);
         setActiveNicheForContentPlan(niche);
         setIsContentPlanModalOpen(true);
     }
@@ -802,7 +809,6 @@ const App: React.FC = () => {
       
       const updatedContentPlan = { content_ideas: [...contentPlan.content_ideas, ...newContent.content_ideas] };
       setContentPlan(updatedContentPlan);
-      setContentPlanCache(prevCache => ({ ...prevCache, [activeNicheForContentPlan.niche_name.original]: updatedContentPlan }));
 
       let updatedNicheForSaving: Niche | undefined;
       setAnalysisResult(prevResult => {
@@ -811,7 +817,11 @@ const App: React.FC = () => {
               if (niche.niche_name.original === activeNicheForContentPlan.niche_name.original) {
                   const newVideoIdeasFromPlan: VideoIdea[] = newContent.content_ideas.map(detailedIdea => ({ title: detailedIdea.title, draft_content: detailedIdea.hook }));
                   const existingVideoIdeas = niche.video_ideas || [];
-                  updatedNicheForSaving = { ...niche, video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan] };
+                  updatedNicheForSaving = { 
+                      ...niche, 
+                      video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan],
+                      detailed_content_plan: updatedContentPlan 
+                  };
                   return updatedNicheForSaving;
               }
               return niche;
@@ -1350,7 +1360,6 @@ const App: React.FC = () => {
                   onUseNiche={handleUseNiche}
                   onViewPlan={handleViewPlan}
                   generatingNiches={generatingNiches}
-                  contentPlanCache={contentPlanCache}
                   numResults={numResults}
                   onGenerateVideoIdeas={handleGenerateVideoIdeas}
                   generatingVideoIdeas={generatingVideoIdeas}

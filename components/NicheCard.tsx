@@ -23,7 +23,6 @@ interface NicheCardProps {
   onUseNiche: (niche: Niche) => void;
   onViewPlan: (niche: Niche) => void;
   isGeneratingContent: boolean;
-  hasContentPlan: boolean;
   onGenerateVideoIdeas: (niche: Niche) => void;
   isGeneratingIdeas: boolean;
   onExportVideoIdeas: (niche: Niche) => void;
@@ -77,10 +76,11 @@ const AnalysisMetric: React.FC<AnalysisMetricProps> = ({ icon, label, score, exp
 };
 
 
-const NicheCard: React.FC<NicheCardProps> = ({ niche, index, onDevelop, isSaved, onUseNiche, onViewPlan, isGeneratingContent, hasContentPlan, onGenerateVideoIdeas, isGeneratingIdeas, onExportVideoIdeas, onExportNiche, isDirectAnalysis, theme, onGenerateChannelPlan, isGeneratingChannelPlan, channelPlanCache }) => {
+const NicheCard: React.FC<NicheCardProps> = ({ niche, index, onDevelop, isSaved, onUseNiche, onViewPlan, isGeneratingContent, onGenerateVideoIdeas, isGeneratingIdeas, onExportVideoIdeas, onExportNiche, isDirectAnalysis, theme, onGenerateChannelPlan, isGeneratingChannelPlan, channelPlanCache }) => {
     const hasVideoIdeas = niche.video_ideas && niche.video_ideas.length > 0;
     const currentTheme = themes[theme] || themes.teal;
     const hasChannelPlan = !!channelPlanCache[niche.niche_name.original];
+    const hasContentPlan = !!niche.detailed_content_plan;
 
     return (
         <div className={`border border-gray-700 rounded-2xl shadow-lg p-6 w-full text-left transition-all duration-300 ${currentTheme.borderHover} hover:shadow-teal-500/10 flex flex-col ${index % 2 === 0 ? 'bg-gray-800/50' : 'bg-gray-800/80'}`}>
