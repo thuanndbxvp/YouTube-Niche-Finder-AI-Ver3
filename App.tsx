@@ -673,24 +673,29 @@ const App: React.FC = () => {
           setActiveApiKeyIndex(null);
         }
 
-        let updatedNiche: Niche | undefined;
+        const currentNicheFromDisplay = analysisResult?.niches.find(n => n.niche_name.original === nicheName);
+        if (!currentNicheFromDisplay) {
+            throw new Error("Không thể tìm thấy niche để cập nhật trong kết quả hiện tại.");
+        }
+
+        const existingIdeas = currentNicheFromDisplay.video_ideas || [];
+        const newIdeas = result.video_ideas || [];
+        const updatedNiche: Niche = { 
+            ...currentNicheFromDisplay, 
+            video_ideas: [...existingIdeas, ...newIdeas] 
+        };
+
         setAnalysisResult(prevResult => {
             if (!prevResult) return null;
-            const newNiches = prevResult.niches.map(niche => {
-                if (niche.niche_name.original === nicheName) {
-                    const existingIdeas = niche.video_ideas || [];
-                    const newIdeas = result.video_ideas || [];
-                    updatedNiche = { ...niche, video_ideas: [...existingIdeas, ...newIdeas] };
-                    return updatedNiche;
-                }
-                return niche;
-            });
-            return { niches: newNiches };
+            return {
+                ...prevResult,
+                niches: prevResult.niches.map(n => 
+                    n.niche_name.original === nicheName ? updatedNiche : n
+                )
+            };
         });
 
-        if (updatedNiche) {
-            await autoSaveOrUpdateNiches([updatedNiche]);
-        }
+        await autoSaveOrUpdateNiches([updatedNiche]);
 
     } catch (err: any) {
         console.error(err);
@@ -807,30 +812,41 @@ const App: React.FC = () => {
         setActiveApiKeyIndex(null);
       }
       
-      const updatedContentPlan = { content_ideas: [...contentPlan.content_ideas, ...newContent.content_ideas] };
-      setContentPlan(updatedContentPlan);
-
-      let updatedNicheForSaving: Niche | undefined;
-      setAnalysisResult(prevResult => {
-          if (!prevResult || !activeNicheForContentPlan) return prevResult;
-          const newNiches = prevResult.niches.map(niche => {
-              if (niche.niche_name.original === activeNicheForContentPlan.niche_name.original) {
-                  const newVideoIdeasFromPlan: VideoIdea[] = newContent.content_ideas.map(detailedIdea => ({ title: detailedIdea.title, draft_content: detailedIdea.hook }));
-                  const existingVideoIdeas = niche.video_ideas || [];
-                  updatedNicheForSaving = { 
-                      ...niche, 
-                      video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan],
-                      detailed_content_plan: updatedContentPlan 
-                  };
-                  return updatedNicheForSaving;
-              }
-              return niche;
-          });
-          return { ...prevResult, niches: newNiches };
-      });
-      if (updatedNicheForSaving) {
-        await autoSaveOrUpdateNiches([updatedNicheForSaving]);
+      const updatedContentPlan: ContentPlanResult = { 
+          content_ideas: [...contentPlan.content_ideas, ...newContent.content_ideas] 
+      };
+      
+      const nicheToUpdateFromDisplay = analysisResult?.niches.find(
+          n => n.niche_name.original === activeNicheForContentPlan.niche_name.original
+      );
+      if (!nicheToUpdateFromDisplay) {
+          throw new Error("Không thể tìm thấy niche để cập nhật trong kết quả hiện tại.");
       }
+
+      const newVideoIdeasFromPlan: VideoIdea[] = newContent.content_ideas.map(detailedIdea => ({ title: detailedIdea.title, draft_content: detailedIdea.hook }));
+      const existingVideoIdeas = nicheToUpdateFromDisplay.video_ideas || [];
+      
+      const updatedNicheForSaving: Niche = {
+          ...nicheToUpdateFromDisplay,
+          video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan],
+          detailed_content_plan: updatedContentPlan
+      };
+
+      setContentPlan(updatedContentPlan);
+      
+      setAnalysisResult(prevResult => {
+          if (!prevResult) return null;
+          return {
+              ...prevResult,
+              niches: prevResult.niches.map(n => 
+                  n.niche_name.original === activeNicheForContentPlan.niche_name.original 
+                      ? updatedNicheForSaving 
+                      : n
+              )
+          };
+      });
+
+      await autoSaveOrUpdateNiches([updatedNicheForSaving]);
 
     } catch (err: any) {
       console.error(err);
