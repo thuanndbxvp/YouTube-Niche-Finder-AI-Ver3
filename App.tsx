@@ -193,7 +193,18 @@ const App: React.FC = () => {
         if (storedOpenAiStatuses) setOpenAiApiKeyStatuses(JSON.parse(storedOpenAiStatuses));
 
         const storedNiches = localStorage.getItem('savedNiches');
-        if (storedNiches) setSavedNiches(JSON.parse(storedNiches));
+        if (storedNiches) {
+            const parsedNiches: Niche[] = JSON.parse(storedNiches);
+            setSavedNiches(parsedNiches);
+
+            const initialCache: Record<string, string> = {};
+            parsedNiches.forEach(niche => {
+                if (niche.channel_plan_content) {
+                    initialCache[niche.niche_name.original] = niche.channel_plan_content;
+                }
+            });
+            setChannelPlanCache(initialCache);
+        }
 
         const storedTrainingHistory = localStorage.getItem('trainingChatHistory');
         setTrainingChatHistory(storedTrainingHistory ? JSON.parse(storedTrainingHistory) : defaultTrainingHistory);
@@ -249,7 +260,16 @@ const App: React.FC = () => {
               .select('niche_data')
               .eq('user_id', session.user.id);
           if (nichesError) throw nichesError;
-          setSavedNiches(nichesData?.map(n => n.niche_data) || []);
+          const loadedNiches = nichesData?.map(n => n.niche_data as Niche) || [];
+          setSavedNiches(loadedNiches);
+          
+          const initialCache: Record<string, string> = {};
+          loadedNiches.forEach(niche => {
+              if (niche.channel_plan_content) {
+                  initialCache[niche.niche_name.original] = niche.channel_plan_content;
+              }
+          });
+          setChannelPlanCache(initialCache);
 
           // Training History
           const { data: trainingData, error: trainingError } = await supabase
@@ -672,20 +692,26 @@ const App: React.FC = () => {
           setActiveOpenAiApiKeyIndex(successfulKeyIndex);
           setActiveApiKeyIndex(null);
         }
-
-        const existingIdeas = nicheToUpdate.video_ideas || [];
-        const newIdeas = result.video_ideas || [];
+        
         const updatedNiche: Niche = { 
             ...nicheToUpdate, 
-            video_ideas: [...existingIdeas, ...newIdeas] 
+            video_ideas: [...(nicheToUpdate.video_ideas || []), ...(result.video_ideas || [])] 
         };
 
         setAnalysisResult(prevResult => {
             if (!prevResult) return null;
+            const targetNiche = prevResult.niches.find(n => n.niche_name.original === nicheName);
+            if (!targetNiche) return prevResult;
+
+            const finalNiche: Niche = {
+                ...targetNiche,
+                video_ideas: [...(targetNiche.video_ideas || []), ...(result.video_ideas || [])]
+            };
+
             return {
                 ...prevResult,
                 niches: prevResult.niches.map(n => 
-                    n.niche_name.original === nicheName ? updatedNiche : n
+                    n.niche_name.original === nicheName ? finalNiche : n
                 )
             };
         });
@@ -811,19 +837,11 @@ const App: React.FC = () => {
           content_ideas: [...contentPlan.content_ideas, ...newContent.content_ideas] 
       };
       
-      const nicheToUpdateFromDisplay = analysisResult?.niches.find(
-          n => n.niche_name.original === activeNicheForContentPlan.niche_name.original
-      );
-      if (!nicheToUpdateFromDisplay) {
-          throw new Error("Không thể tìm thấy niche để cập nhật trong kết quả hiện tại.");
-      }
-
       const newVideoIdeasFromPlan: VideoIdea[] = newContent.content_ideas.map(detailedIdea => ({ title: detailedIdea.title, draft_content: detailedIdea.hook }));
-      const existingVideoIdeas = nicheToUpdateFromDisplay.video_ideas || [];
-      
-      const updatedNicheForSaving: Niche = {
-          ...nicheToUpdateFromDisplay,
-          video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan],
+
+      const nicheToUpdate: Niche = {
+          ...activeNicheForContentPlan,
+          video_ideas: [...(activeNicheForContentPlan.video_ideas || []), ...newVideoIdeasFromPlan],
           detailed_content_plan: updatedContentPlan
       };
 
@@ -835,13 +853,13 @@ const App: React.FC = () => {
               ...prevResult,
               niches: prevResult.niches.map(n => 
                   n.niche_name.original === activeNicheForContentPlan.niche_name.original 
-                      ? updatedNicheForSaving 
+                      ? nicheToUpdate 
                       : n
               )
           };
       });
 
-      await autoSaveOrUpdateNiches([updatedNicheForSaving]);
+      await autoSaveOrUpdateNiches([nicheToUpdate]);
 
     } catch (err: any) {
       console.error(err);
