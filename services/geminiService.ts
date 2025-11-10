@@ -1,6 +1,3 @@
-
-
-
 // Fix: Implement Gemini API service functions.
 import { GoogleGenAI, Type, Content } from "@google/genai";
 import type { AnalysisResult, ChatMessage, FilterLevel, Niche, ContentPlanResult, VideoIdea } from '../types';
@@ -77,6 +74,25 @@ const responseSchema = {
                         required: ["interest_level", "monetization_potential", "competition_level", "sustainability"]
                     },
                     content_strategy: { type: Type.STRING },
+                    video_ideas: {
+                        type: Type.ARRAY,
+                        description: "An optional array for video ideas. The model should leave this empty during initial analysis unless specifically asked.",
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                title: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                        original: { type: Type.STRING },
+                                        translated: { type: Type.STRING }
+                                    },
+                                    required: ["original", "translated"]
+                                },
+                                draft_content: { type: Type.STRING }
+                            },
+                            required: ["title", "draft_content"]
+                        }
+                    }
                 },
                 required: ["niche_name", "description", "audience_demographics", "analysis", "content_strategy"]
             }
@@ -90,7 +106,7 @@ const analysisSystemInstruction = (countToGenerate: number, existingNichesToAvoi
 IMPORTANT: All explanatory and descriptive text (description, demographics, explanations, strategy, etc.) MUST be in VIETNAMESE.
 
 Analyze the user's idea and generate exactly ${countToGenerate} distinct sub-niches or angles related to it.
-For each niche, provide all the fields in the specified JSON structure. DO NOT generate 'video_ideas'.
+For each niche, provide all the fields in the specified JSON structure. DO NOT generate 'video_ideas'. If the schema includes 'video_ideas', you must return an empty array [] for it.
 
 - niche_name: An object with two fields: "original" (a catchy name in the target market's native language) and "translated" (the Vietnamese translation).
 - description: A short paragraph in VIETNAMESE explaining what the niche is about.
@@ -566,7 +582,8 @@ Provide all the fields in the specified JSON structure. The final output must be
     - monetization_potential: Score the potential for making money. Higher is better. Provide an estimated RPM range (e.g., "$1 - $5") and a VIETNAMESE explanation of monetization methods.
     - competition_level: Score the level of competition. A LOWER score is better. Provide a VIETNAMESE explanation.
     - sustainability: Score the long-term potential and evergreen nature of the niche. Higher is better. Provide a VIETNAMESE explanation.
-- content_strategy: Suggest a content strategy in VIETNAMESE for this specific niche.`;
+- content_strategy: Suggest a content strategy in VIETNAMESE for this specific niche.
+- video_ideas: You MUST return an empty array [] for this field.`;
     return instruction;
 };
 
@@ -768,7 +785,7 @@ export const analyzeNicheIdeaWithOpenAI = async (
     const userPrompt = `Analyze the YouTube niche idea: "${idea}". Target market: ${market}.`;
     const messages = convertToOpenAIMessages(trainingHistory, systemInstruction, userPrompt);
     
-    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, responseSchema.properties));
+    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, responseSchema));
     const { result, successfulKeyIndex } = await executeOpenAIWithRetry(apiKeys, action, onKeyFailure);
 
     if (!result.niches) {
@@ -790,7 +807,7 @@ export const generateVideoIdeasForNicheWithOpenAI = async (
     const systemInstruction = videoIdeasSystemInstruction(niche.niche_name.original, existingIdeasToAvoid);
     const messages = convertToOpenAIMessages(trainingHistory, systemInstruction, userPrompt);
     
-    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, videoIdeasResponseSchema.properties));
+    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, videoIdeasResponseSchema));
     return await executeOpenAIWithRetry(apiKeys, action, onKeyFailure);
 };
 
@@ -808,7 +825,7 @@ export const developVideoIdeasWithOpenAI = async (
     const systemInstruction = developIdeasSystemInstruction(niche.niche_name.original, niche.description);
     const messages = convertToOpenAIMessages(trainingHistory, systemInstruction, userPrompt);
 
-    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, contentPlanResponseSchema.properties));
+    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, contentPlanResponseSchema));
     return await executeOpenAIWithRetry(apiKeys, action, onKeyFailure);
 };
 
@@ -825,7 +842,7 @@ export const generateContentPlanWithOpenAI = async (
     const systemInstruction = contentPlanSystemInstruction(niche.niche_name.original, niche.description, countToGenerate, existingIdeasToAvoid);
     const messages = convertToOpenAIMessages(trainingHistory, systemInstruction, userPrompt);
 
-    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, contentPlanResponseSchema.properties));
+    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, contentPlanResponseSchema));
     return await executeOpenAIWithRetry(apiKeys, action, onKeyFailure);
 };
 
@@ -876,7 +893,7 @@ export const analyzeKeywordDirectlyWithOpenAI = async (
     const userPrompt = `Analyze this specific YouTube niche idea in detail: "${idea}". Target market: ${market}.`;
     const messages = convertToOpenAIMessages(trainingHistory, systemInstruction, userPrompt);
 
-    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, responseSchema.properties));
+    const action = async (key: string) => JSON.parse(await callOpenAI(key, model, messages, responseSchema));
     return await executeOpenAIWithRetry(apiKeys, action, onKeyFailure);
 };
 
