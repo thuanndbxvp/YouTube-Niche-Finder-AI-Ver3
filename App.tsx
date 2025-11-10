@@ -439,7 +439,6 @@ const App: React.FC = () => {
         const [insertResult, ...updateResults] = await Promise.all([insertPromise, ...updatePromises]);
         if (insertResult && (insertResult as any).error) throw (insertResult as any).error;
         updateResults.forEach(res => { if (res.error) throw res.error; });
-// Fix: Type caught error as 'any' to avoid type errors with 'unknown' type.
       } catch (error: any) {
         console.error("Error auto-saving niches to Supabase:", error);
         setNotifications(prev => [...prev, { id: Date.now(), message: 'Lỗi đồng bộ dữ liệu với cloud.', type: 'error' }]);
@@ -1168,6 +1167,7 @@ const App: React.FC = () => {
                     </div>
                 )}
             </div>
+            <Auth session={session} theme={currentTheme} />
             <button
                 onClick={() => setIsLibraryModalOpen(true)}
                 className="relative flex items-center space-x-2 px-4 py-2 bg-gray-800/80 border border-gray-700 rounded-md text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
@@ -1181,7 +1181,6 @@ const App: React.FC = () => {
                     </span>
                 )}
             </button>
-            <Auth session={session} theme={currentTheme} />
             <button
                 onClick={() => setIsApiKeyModalOpen(true)}
                 className={`px-4 py-2 rounded-md text-sm font-semibold text-white transition-colors duration-300 border ${
@@ -1372,7 +1371,6 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Fix: Corrected inconsistent prop names for OpenAI keys to avoid type errors. */}
       <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSaveAndCheckGemini={handleSaveAndCheckGeminiApiKeys} onSaveAndCheckOpenAI={handleSaveAndCheckOpenAiApiKeys} onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} onDeleteKey={handleDeleteApiKey} onDeleteOpenAiKey={handleDeleteOpenAiApiKey} currentApiKeys={apiKeys} activeApiKeyIndex={activeApiKeyIndex} apiKeyStatuses={apiKeyStatuses} currentOpenAiApiKeys={openAiApiKeys} openAiApiKeyStatuses={openAiApiKeyStatuses} activeOpenAiApiKeyIndex={activeOpenAiApiKeyIndex} theme={theme} />
       <TrainAiModal isOpen={isTrainAiModalOpen} onClose={() => setIsTrainAiModalOpen(false)} chatHistory={trainingChatHistory} onSendMessage={handleSendTrainingMessage} isLoading={isTrainingLoading} onChangePassword={openChangePasswordModal} selectedModel={selectedModel} theme={theme} />
       <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} onSuccess={handlePasswordSuccess} mode={passwordModalMode} verifyPassword={verifyTrainingPassword} theme={theme} />
