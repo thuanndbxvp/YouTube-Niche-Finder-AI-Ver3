@@ -673,15 +673,10 @@ const App: React.FC = () => {
           setActiveApiKeyIndex(null);
         }
 
-        const currentNicheFromDisplay = analysisResult?.niches.find(n => n.niche_name.original === nicheName);
-        if (!currentNicheFromDisplay) {
-            throw new Error("Không thể tìm thấy niche để cập nhật trong kết quả hiện tại.");
-        }
-
-        const existingIdeas = currentNicheFromDisplay.video_ideas || [];
+        const existingIdeas = nicheToUpdate.video_ideas || [];
         const newIdeas = result.video_ideas || [];
         const updatedNiche: Niche = { 
-            ...currentNicheFromDisplay, 
+            ...nicheToUpdate, 
             video_ideas: [...existingIdeas, ...newIdeas] 
         };
 
