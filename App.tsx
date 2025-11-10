@@ -210,14 +210,19 @@ const App: React.FC = () => {
   const loadDataFromSupabase = async () => {
     if (!session) return;
     try {
+        // 1. Fetch Profile (theme) - may fail for new user
         const { data: profileData, error: profileError } = await supabase
             .from('profiles')
             .select('theme')
             .eq('id', session.user.id)
             .single();
-        if (profileError) throw profileError;
+
+        if (profileError && profileError.code !== 'PGRST116') {
+            throw profileError; // This is a real, unexpected error
+        }
         if (profileData?.theme) setTheme(profileData.theme);
 
+        // 2. Fetch API Keys - will return empty array if none, which is fine
         const { data: keysData, error: keysError } = await supabase
             .from('api_keys')
             .select('key_type, encrypted_key')
@@ -229,6 +234,7 @@ const App: React.FC = () => {
         setOpenAiApiKeys(openaiKeys);
         await checkAndSetAllApiKeys(geminiKeys, openaiKeys);
 
+        // 3. Fetch Saved Niches - will return empty array if none
         const { data: nichesData, error: nichesError } = await supabase
             .from('saved_niches')
             .select('niche_data')
@@ -236,25 +242,21 @@ const App: React.FC = () => {
         if (nichesError) throw nichesError;
         setSavedNiches(nichesData.map(n => n.niche_data));
 
+        // 4. Fetch Training History - may fail for new user
         const { data: trainingData, error: trainingError } = await supabase
             .from('training_history')
             .select('history_data')
             .eq('user_id', session.user.id)
             .single();
-        if (trainingError) throw trainingError;
+
+        if (trainingError && trainingError.code !== 'PGRST116') {
+            throw trainingError; // Real error
+        }
         setTrainingChatHistory(trainingData ? trainingData.history_data : defaultTrainingHistory);
 
     } catch (error: any) {
         console.error("Error loading data from Supabase:", error);
-        // Gracefully handle 'resource not found' errors, which are expected for new users
-        // due to a race condition with the profile creation trigger.
-        if (error?.code !== 'PGRST116') {
-            setError({ title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang." });
-        } else {
-            console.warn("Gracefully handled missing resource (PGRST116), likely a new user.");
-            // For new users, ensure training history is set to default if it fails to load
-            setTrainingChatHistory(defaultTrainingHistory);
-        }
+        setError({ title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang." });
     }
 };
 
