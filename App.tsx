@@ -210,43 +210,64 @@ const App: React.FC = () => {
   const loadDataFromSupabase = async () => {
       if (!session) return;
       try {
-          const { data: profileData, error: profileError } = await supabase
+          // Check for profile and create if it doesn't exist (for new users)
+          let { data: profileData, error: profileError } = await supabase
               .from('profiles')
               .select('theme')
               .eq('id', session.user.id)
               .single();
-          if (profileError) throw profileError;
-          if (profileData?.theme) setTheme(profileData.theme);
+          
+          if (profileError && profileError.code === 'PGRST116') {
+              // New user detected. Create their profile with default theme.
+              const { error: insertError } = await supabase.from('profiles').insert({ 
+                  id: session.user.id, 
+                  theme: 'teal' 
+              });
+              if (insertError) throw insertError; // If profile creation fails, it's a critical error.
+          } else if (profileError) {
+              throw profileError; // Other errors are critical.
+          } else if (profileData?.theme) {
+              setTheme(profileData.theme); // Existing user, apply their saved theme.
+          }
 
+          // Now that the profile is guaranteed to exist, proceed to load other data.
+
+          // API Keys
           const { data: keysData, error: keysError } = await supabase
               .from('api_keys')
               .select('key_type, encrypted_key')
               .eq('user_id', session.user.id);
           if (keysError) throw keysError;
-          const geminiKeys = keysData.filter(k => k.key_type === 'gemini').map(k => k.encrypted_key);
-          const openaiKeys = keysData.filter(k => k.key_type === 'openai').map(k => k.encrypted_key);
+          const geminiKeys = keysData?.filter(k => k.key_type === 'gemini').map(k => k.encrypted_key) || [];
+          const openaiKeys = keysData?.filter(k => k.key_type === 'openai').map(k => k.encrypted_key) || [];
           setApiKeys(geminiKeys);
           setOpenAiApiKeys(openaiKeys);
           await checkAndSetAllApiKeys(geminiKeys, openaiKeys);
 
+          // Saved Niches
           const { data: nichesData, error: nichesError } = await supabase
               .from('saved_niches')
               .select('niche_data')
               .eq('user_id', session.user.id);
           if (nichesError) throw nichesError;
-          setSavedNiches(nichesData.map(n => n.niche_data));
+          setSavedNiches(nichesData?.map(n => n.niche_data) || []);
 
+          // Training History
           const { data: trainingData, error: trainingError } = await supabase
               .from('training_history')
               .select('history_data')
               .eq('user_id', session.user.id)
               .single();
-          if (trainingError && trainingError.code !== 'PGRST116') throw trainingError; // Ignore "single row not found"
+          
+          // For training history, it's okay if it doesn't exist. Use default.
+          if (trainingError && trainingError.code !== 'PGRST116') {
+              throw trainingError;
+          }
           setTrainingChatHistory(trainingData ? trainingData.history_data : defaultTrainingHistory);
 
-      } catch (error) {
+      } catch (error: any) {
           console.error("Error loading data from Supabase:", error);
-          setError({title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang."})
+          setError({title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang."});
       }
   };
 
@@ -307,7 +328,9 @@ const App: React.FC = () => {
       setTheme(newTheme);
       setIsThemeDropdownOpen(false);
       if (session) {
-        await supabase.from('profiles').update({ theme: newTheme }).eq('id', session.user.id);
+        // Use upsert to create a profile if it doesn't exist, or update it if it does.
+        // This fixes the issue of settings not saving for new users.
+        await supabase.from('profiles').upsert({ id: session.user.id, theme: newTheme });
       } else {
         localStorage.setItem('appTheme', newTheme);
       }
