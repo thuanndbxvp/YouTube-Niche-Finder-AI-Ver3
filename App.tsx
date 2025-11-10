@@ -208,57 +208,47 @@ const App: React.FC = () => {
   };
 
   const loadDataFromSupabase = async () => {
-    if (!session) return;
-    try {
-        // 1. Fetch Profile (theme) - may fail for new user
-        const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('theme')
-            .eq('id', session.user.id)
-            .single();
+      if (!session) return;
+      try {
+          const { data: profileData, error: profileError } = await supabase
+              .from('profiles')
+              .select('theme')
+              .eq('id', session.user.id)
+              .single();
+          if (profileError) throw profileError;
+          if (profileData?.theme) setTheme(profileData.theme);
 
-        if (profileError && profileError.code !== 'PGRST116') {
-            throw profileError; // This is a real, unexpected error
-        }
-        if (profileData?.theme) setTheme(profileData.theme);
+          const { data: keysData, error: keysError } = await supabase
+              .from('api_keys')
+              .select('key_type, encrypted_key')
+              .eq('user_id', session.user.id);
+          if (keysError) throw keysError;
+          const geminiKeys = keysData.filter(k => k.key_type === 'gemini').map(k => k.encrypted_key);
+          const openaiKeys = keysData.filter(k => k.key_type === 'openai').map(k => k.encrypted_key);
+          setApiKeys(geminiKeys);
+          setOpenAiApiKeys(openaiKeys);
+          await checkAndSetAllApiKeys(geminiKeys, openaiKeys);
 
-        // 2. Fetch API Keys - will return empty array if none, which is fine
-        const { data: keysData, error: keysError } = await supabase
-            .from('api_keys')
-            .select('key_type, encrypted_key')
-            .eq('user_id', session.user.id);
-        if (keysError) throw keysError;
-        const geminiKeys = keysData.filter(k => k.key_type === 'gemini').map(k => k.encrypted_key);
-        const openaiKeys = keysData.filter(k => k.key_type === 'openai').map(k => k.encrypted_key);
-        setApiKeys(geminiKeys);
-        setOpenAiApiKeys(openaiKeys);
-        await checkAndSetAllApiKeys(geminiKeys, openaiKeys);
+          const { data: nichesData, error: nichesError } = await supabase
+              .from('saved_niches')
+              .select('niche_data')
+              .eq('user_id', session.user.id);
+          if (nichesError) throw nichesError;
+          setSavedNiches(nichesData.map(n => n.niche_data));
 
-        // 3. Fetch Saved Niches - will return empty array if none
-        const { data: nichesData, error: nichesError } = await supabase
-            .from('saved_niches')
-            .select('niche_data')
-            .eq('user_id', session.user.id);
-        if (nichesError) throw nichesError;
-        setSavedNiches(nichesData.map(n => n.niche_data));
+          const { data: trainingData, error: trainingError } = await supabase
+              .from('training_history')
+              .select('history_data')
+              .eq('user_id', session.user.id)
+              .single();
+          if (trainingError && trainingError.code !== 'PGRST116') throw trainingError; // Ignore "single row not found"
+          setTrainingChatHistory(trainingData ? trainingData.history_data : defaultTrainingHistory);
 
-        // 4. Fetch Training History - may fail for new user
-        const { data: trainingData, error: trainingError } = await supabase
-            .from('training_history')
-            .select('history_data')
-            .eq('user_id', session.user.id)
-            .single();
-
-        if (trainingError && trainingError.code !== 'PGRST116') {
-            throw trainingError; // Real error
-        }
-        setTrainingChatHistory(trainingData ? trainingData.history_data : defaultTrainingHistory);
-
-    } catch (error: any) {
-        console.error("Error loading data from Supabase:", error);
-        setError({ title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang." });
-    }
-};
+      } catch (error) {
+          console.error("Error loading data from Supabase:", error);
+          setError({title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang."})
+      }
+  };
 
 
   useEffect(() => {
