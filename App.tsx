@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
@@ -76,6 +75,14 @@ const shuffleArray = (array: string[]) => {
   }
   return newArray;
 };
+
+const defaultTrainingHistory: ChatMessage[] = [
+    { role: 'user', parts: [{ text: `Hãy ghi nhớ và học hỏi kiến thức sau đây về cách tìm và đánh giá từ khóa (key) trên YouTube. Đây là kiến thức nền tảng bạn phải sử dụng cho mọi phân tích trong tương lai.\n\n--- BẮT ĐẦU KIẾN THỨC ---\n\n${keyFindingTranscript}\n\n--- KẾT THÚC KIẾN THỨC ---` }] },
+    { role: 'model', parts: [{ text: 'Cảm ơn bạn. Tôi đã tiếp thu và ghi nhớ kiến thức về 5 phương pháp tìm kiếm và đánh giá từ khóa YouTube. Tôi sẽ áp dụng những chiến lược này vào các phân tích ngách trong tương lai để đưa ra kết quả chất lượng hơn.' }] },
+    { role: 'user', parts: [{ text: `Tuyệt vời. Bây giờ, hãy tiếp tục học hỏi cơ sở kiến thức sau đây về hàng trăm ngách và chủ đề YouTube tiềm năng. Đây là nguồn dữ liệu quan trọng để bạn đưa ra các đề xuất đa dạng và chính xác.\n\n--- BẮT ĐẦU CƠ SỞ KIẾN THỨC NGÁCH ---\n\n${nicheKnowledgeBase}\n\n--- KẾT THÚC CƠ SỞ KIẾN THỨC NGÁCH ---` }] },
+    { role: 'model', parts: [{ text: 'Cảm ơn bạn. Tôi đã tiếp thu và ghi nhớ cơ sở kiến thức toàn diện về các ngách YouTube. Tôi sẽ sử dụng thông tin này để làm giàu và cải thiện độ chính xác cho các phân tích và đề xuất của mình.' }] },
+    { role: 'model', parts: [{ text: 'Chào bạn, tôi là AI phân tích ngách YouTube, đã được trang bị kiến thức chuyên sâu. Bạn có thể cung cấp thêm cho tôi bất kỳ kiến thức, tài liệu, hoặc văn bản nào để tôi học hỏi thêm, hoặc bắt đầu tìm kiếm ý tưởng ngách ngay bây giờ.'}] }
+];
 
 
 const App: React.FC = () => {
@@ -172,15 +179,6 @@ const App: React.FC = () => {
         if (!session) localStorage.setItem('openAiApiKeyStatuses', JSON.stringify([]));
       }
   };
-
-  const defaultTrainingHistory: ChatMessage[] = [
-      { role: 'user', parts: [{ text: `Hãy ghi nhớ và học hỏi kiến thức sau đây về cách tìm và đánh giá từ khóa (key) trên YouTube. Đây là kiến thức nền tảng bạn phải sử dụng cho mọi phân tích trong tương lai.\n\n--- BẮT ĐẦU KIẾN THỨC ---\n\n${keyFindingTranscript}\n\n--- KẾT THÚC KIẾN THỨC ---` }] },
-      { role: 'model', parts: [{ text: 'Cảm ơn bạn. Tôi đã tiếp thu và ghi nhớ kiến thức về 5 phương pháp tìm kiếm và đánh giá từ khóa YouTube. Tôi sẽ áp dụng những chiến lược này vào các phân tích ngách trong tương lai để đưa ra kết quả chất lượng hơn.' }] },
-      { role: 'user', parts: [{ text: `Tuyệt vời. Bây giờ, hãy tiếp tục học hỏi cơ sở kiến thức sau đây về hàng trăm ngách và chủ đề YouTube tiềm năng. Đây là nguồn dữ liệu quan trọng để bạn đưa ra các đề xuất đa dạng và chính xác.\n\n--- BẮT ĐẦU CƠ SỞ KIẾN THỨC NGÁCH ---\n\n${nicheKnowledgeBase}\n\n--- KẾT THÚC CƠ SỞ KIẾN THỨC NGÁCH ---` }] },
-      { role: 'model', parts: [{ text: 'Cảm ơn bạn. Tôi đã tiếp thu và ghi nhớ cơ sở kiến thức toàn diện về các ngách YouTube. Tôi sẽ sử dụng thông tin này để làm giàu và cải thiện độ chính xác cho các phân tích và đề xuất của mình.' }] },
-      { role: 'model', parts: [{ text: 'Chào bạn, tôi là AI phân tích ngách YouTube, đã được trang bị kiến thức chuyên sâu. Bạn có thể cung cấp thêm cho tôi bất kỳ kiến thức, tài liệu, hoặc văn bản nào để tôi học hỏi thêm, hoặc bắt đầu tìm kiếm ý tưởng ngách ngay bây giờ.'}] }
-  ];
-
 
   const loadDataFromLocalStorage = () => {
     try {
@@ -323,7 +321,7 @@ const App: React.FC = () => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [session, isAuthChecked]);
+  }, [session?.user.id, isAuthChecked]);
   
   const handleSetTheme = async (newTheme: string) => {
     if (themes[newTheme]) {
