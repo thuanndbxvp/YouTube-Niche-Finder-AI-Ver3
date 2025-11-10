@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Niche } from '../types';
-// Fix: Import ClipboardListIcon to resolve reference error.
+// Fix: Imported ClipboardListIcon to resolve reference error.
 import {
     DocumentTextIcon, XIcon, ArrowsExpandIcon, ArrowsShrinkIcon, DownloadIcon, PlusCircleIcon,
     InformationCircleIcon, UserGroupIcon, CollectionIcon, CalendarIcon, TrendingUpIcon, PaintBrushIcon,

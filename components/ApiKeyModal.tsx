@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import type { ApiKeyStatus } from '../App';
 import { CheckCircleIcon, XCircleIcon, TrashIcon, GoogleIcon } from './icons/Icons';
@@ -15,9 +16,10 @@ interface ApiKeyModalProps {
   currentApiKeys: string[];
   activeApiKeyIndex: number | null;
   apiKeyStatuses: ApiKeyStatus[];
-  currentOpenAIApiKeys: string[];
-  openAIApiKeyStatuses: ApiKeyStatus[];
-  activeOpenAIApiKeyIndex: number | null;
+  // Fix: Renamed props to be consistent with state variables in App.tsx.
+  currentOpenAiApiKeys: string[];
+  openAiApiKeyStatuses: ApiKeyStatus[];
+  activeOpenAiApiKeyIndex: number | null;
   theme: string;
 }
 
@@ -48,7 +50,7 @@ const OpenAIIcon: React.FC = () => (
 const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ 
     isOpen, onClose, onSaveAndCheckGemini, onSaveAndCheckOpenAI, onRecheckAll, onDeleteKey, onDeleteOpenAiKey,
     currentApiKeys, activeApiKeyIndex, apiKeyStatuses,
-    currentOpenAIApiKeys, openAIApiKeyStatuses, activeOpenAIApiKeyIndex,
+    currentOpenAiApiKeys, openAiApiKeyStatuses, activeOpenAiApiKeyIndex,
     theme
 }) => {
   const [geminiKeysInput, setGeminiKeysInput] = useState('');
@@ -60,9 +62,9 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setGeminiKeysInput(currentApiKeys.join('\n'));
-      setOpenAiKeysInput(currentOpenAIApiKeys.join('\n'));
+      setOpenAiKeysInput(currentOpenAiApiKeys.join('\n'));
     }
-  }, [isOpen, currentApiKeys, currentOpenAIApiKeys]);
+  }, [isOpen, currentApiKeys, currentOpenAiApiKeys]);
 
   if (!isOpen) return null;
 
@@ -142,16 +144,16 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                 />
                 <div className="text-xs text-gray-400 mt-2">Lấy key từ <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className={`${currentTheme.text} hover:underline`}>trang tổng quan OpenAI</a>.</div>
                 <div className="h-40 overflow-y-auto bg-gray-800/50 p-2 rounded-lg border border-gray-700/50 mt-3">
-                  {currentOpenAIApiKeys.length > 0 ? (
+                  {currentOpenAiApiKeys.length > 0 ? (
                       <ul className="space-y-2">
-                          {currentOpenAIApiKeys.map((key, index) => (
-                              <li key={index} className={`flex items-center justify-between p-2 rounded-md transition-colors ${index === activeOpenAIApiKeyIndex ? currentTheme.activeBg : 'bg-gray-700'}`}>
+                          {currentOpenAiApiKeys.map((key, index) => (
+                              <li key={index} className={`flex items-center justify-between p-2 rounded-md transition-colors ${index === activeOpenAiApiKeyIndex ? currentTheme.activeBg : 'bg-gray-700'}`}>
                                   <div className="flex items-center space-x-3 overflow-hidden">
-                                      <StatusIcon status={openAIApiKeyStatuses[index] || 'idle'} themeColor={theme} />
+                                      <StatusIcon status={openAiApiKeyStatuses[index] || 'idle'} themeColor={theme} />
                                       <span className="font-mono text-sm text-gray-300 truncate" title={key}>{`...${key.slice(-6)}`}</span>
                                   </div>
                                   <div className="flex items-center space-x-2 flex-shrink-0">
-                                      {index === activeOpenAIApiKeyIndex && <span className={`text-xs ${currentTheme.text} font-bold ${currentTheme.activeBg} px-2 py-1 rounded-full`}>ACTIVE</span>}
+                                      {index === activeOpenAiApiKeyIndex && <span className={`text-xs ${currentTheme.text} font-bold ${currentTheme.activeBg} px-2 py-1 rounded-full`}>ACTIVE</span>}
                                       <button onClick={() => onDeleteOpenAiKey(index)} className="p-1.5 text-gray-400 hover:bg-red-500/20 hover:text-red-400 rounded-full transition-colors" aria-label={`Xóa OpenAI Key ${index + 1}`}><TrashIcon /></button>
                                   </div>
                               </li>
@@ -166,7 +168,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
         <div className="flex justify-end space-x-4 mt-6">
           <button
             onClick={handleRecheckCurrentKeys}
-            disabled={isChecking || (currentApiKeys.length === 0 && currentOpenAIApiKeys.length === 0)}
+            disabled={isChecking || (currentApiKeys.length === 0 && currentOpenAiApiKeys.length === 0)}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-gray-600 rounded-md text-sm text-gray-300 hover:bg-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isChecking && <div className="w-4 h-4 border-2 border-t-white border-gray-800 rounded-full animate-spin"></div>}

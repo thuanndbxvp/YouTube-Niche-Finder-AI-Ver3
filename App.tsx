@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
@@ -9,7 +10,7 @@ import ResultsDisplay from './components/ResultsDisplay';
 import Loader from './components/Loader';
 import ApiKeyModal from './components/ApiKeyModal';
 import TrainAiModal from './components/TrainAiModal';
-import { BookmarkIcon, PaintBrushIcon, SaveIcon } from './components/icons/Icons';
+import { BookmarkIcon, PaintBrushIcon } from './components/icons/Icons';
 import InitialSuggestions from './components/InitialSuggestions';
 import PasswordModal from './components/PasswordModal';
 import ContentPlanModal from './components/ContentPlanModal';
@@ -399,6 +400,58 @@ const App: React.FC = () => {
     else if (activeOpenAiApiKeyIndex !== null && indexToDelete < activeOpenAiApiKeyIndex) setActiveOpenAiApiKeyIndex(p => p === null ? null : p - 1);
   };
 
+  const autoSaveOrUpdateNiches = async (processedNiches: Niche[]) => {
+    if (!processedNiches || processedNiches.length === 0) return;
+
+    const savedNichesMap = new Map(savedNiches.map(n => [n.niche_name.original, n]));
+    const nichesToInsert: Niche[] = [];
+    const nichesToUpdate: Niche[] = [];
+
+    processedNiches.forEach(niche => {
+      const existingNiche = savedNichesMap.get(niche.niche_name.original);
+      if (existingNiche) {
+        if (JSON.stringify(niche) !== JSON.stringify(existingNiche)) {
+          nichesToUpdate.push(niche);
+        }
+      } else {
+        nichesToInsert.push(niche);
+      }
+    });
+
+    if (nichesToInsert.length === 0 && nichesToUpdate.length === 0) return;
+
+    const updatedStateMap = new Map(savedNiches.map(n => [n.niche_name.original, n]));
+    nichesToInsert.forEach(n => updatedStateMap.set(n.niche_name.original, n));
+    nichesToUpdate.forEach(n => updatedStateMap.set(n.niche_name.original, n));
+    const finalSavedNichesState = Array.from(updatedStateMap.values());
+    setSavedNiches(finalSavedNichesState);
+
+    if (session) {
+      try {
+        const insertPromise = nichesToInsert.length > 0
+          ? supabase.from('saved_niches').insert(nichesToInsert.map(n => ({ user_id: session.user.id, niche_data: n })))
+          : Promise.resolve();
+        const updatePromises = nichesToUpdate.map(niche =>
+          supabase.from('saved_niches')
+            .update({ niche_data: niche })
+            .match({ user_id: session.user.id, 'niche_data->niche_name->>original': niche.niche_name.original })
+        );
+        const [insertResult, ...updateResults] = await Promise.all([insertPromise, ...updatePromises]);
+        if (insertResult && (insertResult as any).error) throw (insertResult as any).error;
+        updateResults.forEach(res => { if (res.error) throw res.error; });
+// Fix: Type caught error as 'any' to avoid type errors with 'unknown' type.
+      } catch (error: any) {
+        console.error("Error auto-saving niches to Supabase:", error);
+        setNotifications(prev => [...prev, { id: Date.now(), message: 'Lỗi đồng bộ dữ liệu với cloud.', type: 'error' }]);
+      }
+    } else {
+      localStorage.setItem('savedNiches', JSON.stringify(finalSavedNichesState));
+    }
+
+    if (nichesToInsert.length > 0) {
+      setNotifications(prev => [...prev, { id: Date.now(), message: `Đã tự động lưu ${nichesToInsert.length} ý tưởng mới vào thư viện.`, type: 'success' }]);
+    }
+  };
 
   const updateTrainingHistory = async (newHistory: ChatMessage[]) => {
       setTrainingChatHistory(newHistory);
@@ -556,11 +609,12 @@ const App: React.FC = () => {
           setActiveApiKeyIndex(null);
       }
       
-      if (isLoadMore) {
-        setAnalysisResult(prev => prev ? { niches: [...prev.niches, ...result.niches] } : result);
+      if (isLoadMore && analysisResult) {
+        setAnalysisResult({ niches: [...analysisResult.niches, ...result.niches] });
       } else {
         setAnalysisResult(result);
       }
+      await autoSaveOrUpdateNiches(result.niches);
       
       setAnalysisDepth(prev => isNewSearch ? 1 : prev + 1);
 
@@ -621,19 +675,24 @@ const App: React.FC = () => {
           setActiveApiKeyIndex(null);
         }
 
-
+        let updatedNiche: Niche | undefined;
         setAnalysisResult(prevResult => {
             if (!prevResult) return null;
             const newNiches = prevResult.niches.map(niche => {
                 if (niche.niche_name.original === nicheName) {
                     const existingIdeas = niche.video_ideas || [];
                     const newIdeas = result.video_ideas || [];
-                    return { ...niche, video_ideas: [...existingIdeas, ...newIdeas] };
+                    updatedNiche = { ...niche, video_ideas: [...existingIdeas, ...newIdeas] };
+                    return updatedNiche;
                 }
                 return niche;
             });
             return { niches: newNiches };
         });
+
+        if (updatedNiche) {
+            await autoSaveOrUpdateNiches([updatedNiche]);
+        }
 
     } catch (err: any) {
         console.error(err);
@@ -746,18 +805,23 @@ const App: React.FC = () => {
       setContentPlan(updatedContentPlan);
       setContentPlanCache(prevCache => ({ ...prevCache, [activeNicheForContentPlan.niche_name.original]: updatedContentPlan }));
 
+      let updatedNicheForSaving: Niche | undefined;
       setAnalysisResult(prevResult => {
           if (!prevResult || !activeNicheForContentPlan) return prevResult;
           const newNiches = prevResult.niches.map(niche => {
               if (niche.niche_name.original === activeNicheForContentPlan.niche_name.original) {
                   const newVideoIdeasFromPlan: VideoIdea[] = newContent.content_ideas.map(detailedIdea => ({ title: detailedIdea.title, draft_content: detailedIdea.hook }));
                   const existingVideoIdeas = niche.video_ideas || [];
-                  return { ...niche, video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan] };
+                  updatedNicheForSaving = { ...niche, video_ideas: [...existingVideoIdeas, ...newVideoIdeasFromPlan] };
+                  return updatedNicheForSaving;
               }
               return niche;
           });
           return { ...prevResult, niches: newNiches };
       });
+      if (updatedNicheForSaving) {
+        await autoSaveOrUpdateNiches([updatedNicheForSaving]);
+      }
 
     } catch (err: any) {
       console.error(err);
@@ -767,40 +831,6 @@ const App: React.FC = () => {
     } finally {
       setIsContentPlanLoadingMore(false);
     }
-  };
-
-
-  const handleSaveSession = async () => {
-    if (!analysisResult || analysisResult.niches.length === 0) {
-      setNotifications(prev => [...prev, { id: Date.now(), message: 'Không có kết quả nào để lưu.', type: 'error' }]);
-      return;
-    }
-
-    const newNichesToSave = analysisResult.niches;
-    const savedNicheNames = new Set(savedNiches.map(n => n.niche_name.original));
-    const uniqueNewNiches = newNichesToSave.filter(niche => !savedNicheNames.has(niche.niche_name.original));
-
-    if (uniqueNewNiches.length === 0) {
-        setNotifications(prev => [...prev, { id: Date.now(), message: 'Tất cả các kết quả hiện tại đã được lưu trước đó.', type: 'error' }]);
-        return;
-    }
-
-    const newNichesWithPlans = uniqueNewNiches.map(niche => {
-        const plan = channelPlanCache[niche.niche_name.original];
-        return plan ? { ...niche, channel_plan_content: plan } : niche;
-    });
-
-    const updatedSavedNiches = [...savedNiches, ...newNichesWithPlans];
-    setSavedNiches(updatedSavedNiches);
-
-    if (session) {
-        const recordsToInsert = newNichesWithPlans.map(niche => ({ user_id: session.user.id, niche_data: niche }));
-        await supabase.from('saved_niches').insert(recordsToInsert);
-    } else {
-        localStorage.setItem('savedNiches', JSON.stringify(updatedSavedNiches));
-    }
-    
-    setNotifications(prev => [...prev, { id: Date.now(), message: `Đã lưu thành công ${uniqueNewNiches.length} ý tưởng mới vào thư viện.`, type: 'success' }]);
   };
 
   const handleExportSaved = () => {
@@ -1022,22 +1052,21 @@ const App: React.FC = () => {
     
     try {
         const result = await _generatePlanApiCall(niche, false);
-
+        const nicheWithPlan = { ...niche, channel_plan_content: result };
+        
         setChannelPlanContent(result);
         setChannelPlanCache(prev => ({ ...prev, [nicheName]: result }));
-        
-        const isSaved = savedNiches.some(saved => saved.niche_name.original === nicheName);
-        if (isSaved) {
-            const newSaved = savedNiches.map(saved => saved.niche_name.original === nicheName ? { ...saved, channel_plan_content: result } : saved);
-            setSavedNiches(newSaved);
-            if (session) {
-                await supabase.from('saved_niches').update({ niche_data: newSaved.find(n => n.niche_name.original === nicheName) }).match({ user_id: session.user.id, 'niche_data->niche_name->>original': nicheName });
-            } else {
-                localStorage.setItem('savedNiches', JSON.stringify(newSaved));
-            }
-        }
+        await autoSaveOrUpdateNiches([nicheWithPlan]);
 
-        setActiveNicheForChannelPlan(niche);
+        setAnalysisResult(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                niches: prev.niches.map(n => n.niche_name.original === nicheName ? nicheWithPlan : n)
+            };
+        });
+
+        setActiveNicheForChannelPlan(nicheWithPlan);
         setIsChannelPlanModalOpen(true);
     } catch (err: any) {
         console.error(err);
@@ -1063,19 +1092,20 @@ const App: React.FC = () => {
     
     try {
         const result = await _generatePlanApiCall(niche, true);
+        const nicheWithDetailedPlan = { ...niche, channel_plan_content: result };
+
         setChannelPlanContent(result);
         setChannelPlanCache(prev => ({ ...prev, [nicheName]: result }));
+        await autoSaveOrUpdateNiches([nicheWithDetailedPlan]);
 
-        const isSaved = savedNiches.some(saved => saved.niche_name.original === nicheName);
-        if (isSaved) {
-            const newSaved = savedNiches.map(saved => saved.niche_name.original === nicheName ? { ...saved, channel_plan_content: result } : saved);
-            setSavedNiches(newSaved);
-            if (session) {
-                await supabase.from('saved_niches').update({ niche_data: newSaved.find(n => n.niche_name.original === nicheName) }).match({ user_id: session.user.id, 'niche_data->niche_name->>original': nicheName });
-            } else {
-                localStorage.setItem('savedNiches', JSON.stringify(newSaved));
-            }
-        }
+        setAnalysisResult(prev => {
+            if (!prev) return null;
+            return {
+                ...prev,
+                niches: prev.niches.map(n => n.niche_name.original === nicheName ? nicheWithDetailedPlan : n)
+            };
+        });
+        setActiveNicheForChannelPlan(nicheWithDetailedPlan);
     } catch (err: any) {
         console.error(err);
         setNotifications(prev => [...prev, { id: Date.now(), message: `Lỗi khi tạo kế hoạch chi tiết hơn: "${niche.niche_name.translated}". ${err.message || 'Vui lòng thử lại.'}`, type: 'error' }]);
@@ -1138,15 +1168,6 @@ const App: React.FC = () => {
                     </div>
                 )}
             </div>
-            <button
-                onClick={handleSaveSession}
-                disabled={!analysisResult || analysisResult.niches.length === 0}
-                className="relative flex items-center space-x-2 px-4 py-2 bg-gray-800/80 border border-gray-700 rounded-md text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Lưu phiên"
-            >
-                <SaveIcon />
-                <span>Lưu phiên</span>
-            </button>
             <button
                 onClick={() => setIsLibraryModalOpen(true)}
                 className="relative flex items-center space-x-2 px-4 py-2 bg-gray-800/80 border border-gray-700 rounded-md text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
@@ -1351,8 +1372,8 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Fix: Correct typo in prop value from openAIApiKeyStatuses to openAiApiKeyStatuses */}
-      <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSaveAndCheckGemini={handleSaveAndCheckGeminiApiKeys} onSaveAndCheckOpenAI={handleSaveAndCheckOpenAiApiKeys} onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} onDeleteKey={handleDeleteApiKey} onDeleteOpenAiKey={handleDeleteOpenAiApiKey} currentApiKeys={apiKeys} activeApiKeyIndex={activeApiKeyIndex} apiKeyStatuses={apiKeyStatuses} currentOpenAIApiKeys={openAiApiKeys} openAIApiKeyStatuses={openAiApiKeyStatuses} activeOpenAIApiKeyIndex={activeOpenAiApiKeyIndex} theme={theme} />
+      {/* Fix: Corrected inconsistent prop names for OpenAI keys to avoid type errors. */}
+      <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSaveAndCheckGemini={handleSaveAndCheckGeminiApiKeys} onSaveAndCheckOpenAI={handleSaveAndCheckOpenAiApiKeys} onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} onDeleteKey={handleDeleteApiKey} onDeleteOpenAiKey={handleDeleteOpenAiApiKey} currentApiKeys={apiKeys} activeApiKeyIndex={activeApiKeyIndex} apiKeyStatuses={apiKeyStatuses} currentOpenAiApiKeys={openAiApiKeys} openAiApiKeyStatuses={openAiApiKeyStatuses} activeOpenAiApiKeyIndex={activeOpenAiApiKeyIndex} theme={theme} />
       <TrainAiModal isOpen={isTrainAiModalOpen} onClose={() => setIsTrainAiModalOpen(false)} chatHistory={trainingChatHistory} onSendMessage={handleSendTrainingMessage} isLoading={isTrainingLoading} onChangePassword={openChangePasswordModal} selectedModel={selectedModel} theme={theme} />
       <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} onSuccess={handlePasswordSuccess} mode={passwordModalMode} verifyPassword={verifyTrainingPassword} theme={theme} />
       <ContentPlanModal isOpen={isContentPlanModalOpen} onClose={() => setIsContentPlanModalOpen(false)} contentPlan={contentPlan} activeNiche={activeNicheForContentPlan} onLoadMore={handleLoadMoreContentPlan} isLoadingMore={isContentPlanLoadingMore} theme={theme} />
