@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
@@ -79,7 +80,7 @@ const shuffleArray = (array: string[]) => {
 
 const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
-  const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
+  const [isAuthChecked, setIsAuthChecked] = useState<boolean>(false);
   
   const [userInput, setUserInput] = useState<string>('');
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -275,6 +276,7 @@ const App: React.FC = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      setIsAuthChecked(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -294,14 +296,14 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!isAuthChecked) return;
+
     const init = async () => {
-        setIsDataLoaded(false);
         if (session) {
             await loadDataFromSupabase();
         } else {
             loadDataFromLocalStorage();
         }
-        setIsDataLoaded(true);
     };
     init();
 
@@ -321,7 +323,7 @@ const App: React.FC = () => {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [session]);
+  }, [session, isAuthChecked]);
   
   const handleSetTheme = async (newTheme: string) => {
     if (themes[newTheme]) {
@@ -1106,7 +1108,7 @@ const App: React.FC = () => {
   const hasValidOpenAiKey = openAiApiKeyStatuses.includes('valid');
   const hasAnyValidKey = hasValidGeminiKey || hasValidOpenAiKey;
 
-  if (!isDataLoaded) {
+  if (!isAuthChecked) {
       return (
           <div className="min-h-screen bg-gray-900 flex items-center justify-center">
               <Loader />
@@ -1351,6 +1353,7 @@ const App: React.FC = () => {
         </div>
       </main>
 
+      {/* Fix: Correct typo in prop value from openAIApiKeyStatuses to openAiApiKeyStatuses */}
       <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSaveAndCheckGemini={handleSaveAndCheckGeminiApiKeys} onSaveAndCheckOpenAI={handleSaveAndCheckOpenAiApiKeys} onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} onDeleteKey={handleDeleteApiKey} onDeleteOpenAiKey={handleDeleteOpenAiApiKey} currentApiKeys={apiKeys} activeApiKeyIndex={activeApiKeyIndex} apiKeyStatuses={apiKeyStatuses} currentOpenAIApiKeys={openAiApiKeys} openAIApiKeyStatuses={openAiApiKeyStatuses} activeOpenAIApiKeyIndex={activeOpenAiApiKeyIndex} theme={theme} />
       <TrainAiModal isOpen={isTrainAiModalOpen} onClose={() => setIsTrainAiModalOpen(false)} chatHistory={trainingChatHistory} onSendMessage={handleSendTrainingMessage} isLoading={isTrainingLoading} onChangePassword={openChangePasswordModal} selectedModel={selectedModel} theme={theme} />
       <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} onSuccess={handlePasswordSuccess} mode={passwordModalMode} verifyPassword={verifyTrainingPassword} theme={theme} />
