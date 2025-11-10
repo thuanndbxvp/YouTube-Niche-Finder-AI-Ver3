@@ -215,7 +215,7 @@ const App: React.FC = () => {
               .select('theme')
               .eq('id', session.user.id)
               .single();
-          if (profileError) throw profileError;
+          if (profileError && profileError.code !== 'PGRST116') throw profileError;
           if (profileData?.theme) setTheme(profileData.theme);
 
           const { data: keysData, error: keysError } = await supabase
