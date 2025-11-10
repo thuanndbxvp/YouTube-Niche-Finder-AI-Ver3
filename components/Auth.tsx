@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import type { Session } from '@supabase/supabase-js';
-import { GoogleIcon } from './icons/Icons';
+import { GoogleIcon, UserGroupIcon } from './icons/Icons';
 import type { Theme } from '../theme';
 
 interface AuthProps {
@@ -43,18 +43,17 @@ const Auth: React.FC<AuthProps> = ({ session, theme }) => {
   if (session) {
     const user = session.user;
     const avatarUrl = user.user_metadata?.avatar_url;
-    const userInitial = user.email ? user.email[0].toUpperCase() : '?';
 
     return (
       <div className="relative" ref={dropdownRef}>
         <button
           onClick={() => setIsDropdownOpen(prev => !prev)}
-          className={`w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 ${theme.focusRing}`}
+          className={`w-10 h-10 rounded-full flex items-center justify-center bg-gray-700 hover:ring-2 hover:ring-offset-2 hover:ring-offset-gray-800 ${theme.focusRing} transition-all`}
         >
           {avatarUrl ? (
             <img src={avatarUrl} alt="User Avatar" className="w-full h-full object-cover rounded-full" />
           ) : (
-            <span className="font-bold text-lg text-white">{userInitial}</span>
+            <span className="text-gray-400"><UserGroupIcon/></span>
           )}
         </button>
 

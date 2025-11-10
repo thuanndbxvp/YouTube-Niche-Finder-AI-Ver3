@@ -208,47 +208,55 @@ const App: React.FC = () => {
   };
 
   const loadDataFromSupabase = async () => {
-      if (!session) return;
-      try {
-          const { data: profileData, error: profileError } = await supabase
-              .from('profiles')
-              .select('theme')
-              .eq('id', session.user.id)
-              .single();
-          if (profileError && profileError.code !== 'PGRST116') throw profileError;
-          if (profileData?.theme) setTheme(profileData.theme);
+    if (!session) return;
+    try {
+        const { data: profileData, error: profileError } = await supabase
+            .from('profiles')
+            .select('theme')
+            .eq('id', session.user.id)
+            .single();
+        if (profileError) throw profileError;
+        if (profileData?.theme) setTheme(profileData.theme);
 
-          const { data: keysData, error: keysError } = await supabase
-              .from('api_keys')
-              .select('key_type, encrypted_key')
-              .eq('user_id', session.user.id);
-          if (keysError) throw keysError;
-          const geminiKeys = keysData.filter(k => k.key_type === 'gemini').map(k => k.encrypted_key);
-          const openaiKeys = keysData.filter(k => k.key_type === 'openai').map(k => k.encrypted_key);
-          setApiKeys(geminiKeys);
-          setOpenAiApiKeys(openaiKeys);
-          await checkAndSetAllApiKeys(geminiKeys, openaiKeys);
+        const { data: keysData, error: keysError } = await supabase
+            .from('api_keys')
+            .select('key_type, encrypted_key')
+            .eq('user_id', session.user.id);
+        if (keysError) throw keysError;
+        const geminiKeys = keysData.filter(k => k.key_type === 'gemini').map(k => k.encrypted_key);
+        const openaiKeys = keysData.filter(k => k.key_type === 'openai').map(k => k.encrypted_key);
+        setApiKeys(geminiKeys);
+        setOpenAiApiKeys(openaiKeys);
+        await checkAndSetAllApiKeys(geminiKeys, openaiKeys);
 
-          const { data: nichesData, error: nichesError } = await supabase
-              .from('saved_niches')
-              .select('niche_data')
-              .eq('user_id', session.user.id);
-          if (nichesError) throw nichesError;
-          setSavedNiches(nichesData.map(n => n.niche_data));
+        const { data: nichesData, error: nichesError } = await supabase
+            .from('saved_niches')
+            .select('niche_data')
+            .eq('user_id', session.user.id);
+        if (nichesError) throw nichesError;
+        setSavedNiches(nichesData.map(n => n.niche_data));
 
-          const { data: trainingData, error: trainingError } = await supabase
-              .from('training_history')
-              .select('history_data')
-              .eq('user_id', session.user.id)
-              .single();
-          if (trainingError && trainingError.code !== 'PGRST116') throw trainingError; // Ignore "single row not found"
-          setTrainingChatHistory(trainingData ? trainingData.history_data : defaultTrainingHistory);
+        const { data: trainingData, error: trainingError } = await supabase
+            .from('training_history')
+            .select('history_data')
+            .eq('user_id', session.user.id)
+            .single();
+        if (trainingError) throw trainingError;
+        setTrainingChatHistory(trainingData ? trainingData.history_data : defaultTrainingHistory);
 
-      } catch (error) {
-          console.error("Error loading data from Supabase:", error);
-          setError({title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang."})
-      }
-  };
+    } catch (error: any) {
+        console.error("Error loading data from Supabase:", error);
+        // Gracefully handle 'resource not found' errors, which are expected for new users
+        // due to a race condition with the profile creation trigger.
+        if (error?.code !== 'PGRST116') {
+            setError({ title: "Lỗi tải dữ liệu", body: "Không thể tải dữ liệu của bạn từ máy chủ. Vui lòng thử tải lại trang." });
+        } else {
+            console.warn("Gracefully handled missing resource (PGRST116), likely a new user.");
+            // For new users, ensure training history is set to default if it fails to load
+            setTrainingChatHistory(defaultTrainingHistory);
+        }
+    }
+};
 
 
   useEffect(() => {
