@@ -1,23 +1,60 @@
 
-// Fix: Implement Gemini API service functions following the latest guidelines.
+// Fix: Implement Gemini API service functions following the latest guidelines with manual key management.
 import { GoogleGenAI, Type, Content, GenerateContentResponse } from "@google/genai";
 import type { AnalysisResult, ChatMessage, FilterLevel, Niche, ContentPlanResult, VideoIdea, ProductionType } from '../types';
 
 /**
- * Retries a Gemini API call with exponential backoff.
+ * Gets a random API key from the provided list.
  */
-async function callGeminiWithRetry(action: (ai: GoogleGenAI) => Promise<GenerateContentResponse>, retries = 3, delay = 1000): Promise<GenerateContentResponse> {
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    return await action(ai);
-  } catch (error: any) {
-    if (retries > 0 && (error.status === 429 || error.status >= 500)) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-      return callGeminiWithRetry(action, retries - 1, delay * 2);
+const getRandomKey = (keys: string[]) => keys[Math.floor(Math.random() * keys.length)];
+
+/**
+ * Retries a Gemini API call with exponential backoff and key rotation.
+ */
+async function callGeminiWithRetry(
+    apiKeys: string[],
+    action: (ai: GoogleGenAI) => Promise<GenerateContentResponse>,
+    retries = 3,
+    delay = 1000
+): Promise<GenerateContentResponse> {
+    if (!apiKeys || apiKeys.length === 0) {
+        throw new Error("Vui lòng nhập API Key trong phần Cấu hình để sử dụng tính năng này.");
     }
-    throw error;
-  }
+    
+    // Pick a key. If retrying, we might pick a different one next time or filter out bad ones in a more complex implementation.
+    // For now, random selection offers basic load balancing.
+    const apiKey = getRandomKey(apiKeys);
+    const ai = new GoogleGenAI({ apiKey });
+
+    try {
+        return await action(ai);
+    } catch (error: any) {
+        if (retries > 0 && (error.status === 429 || error.status >= 500)) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            // Try with a different key if available by filtering out the one that just failed?
+            // Simple approach: just pass the whole list again, probability suggests we might pick a different one.
+            // Better approach:
+            const remainingKeys = apiKeys.length > 1 ? apiKeys.filter(k => k !== apiKey) : apiKeys;
+            return callGeminiWithRetry(remainingKeys, action, retries - 1, delay * 2);
+        }
+        throw error;
+    }
 }
+
+export const validateApiKey = async (apiKey: string): Promise<boolean> => {
+    if (!apiKey) return false;
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        // Use a lightweight model for validation
+        await ai.models.generateContent({
+            model: 'gemini-2.5-flash-latest',
+            contents: 'test',
+        });
+        return true;
+    } catch (error) {
+        return false;
+    }
+};
 
 interface AnalysisFilters {
     interest?: FilterLevel;
@@ -162,6 +199,7 @@ interface AnalysisOptions {
 export const analyzeNicheIdea = async (
   idea: string,
   market: string,
+  apiKeys: string[],
   trainingHistory: ChatMessage[],
   options: AnalysisOptions = {}
 ): Promise<AnalysisResult> => {
@@ -177,7 +215,7 @@ export const analyzeNicheIdea = async (
         { role: 'user', parts: [{ text: userPrompt }] }
     ];
 
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
@@ -191,23 +229,23 @@ export const analyzeNicheIdea = async (
     return JSON.parse(response.text) as AnalysisResult;
 };
 
-export const getTrainingResponse = async (history: ChatMessage[]): Promise<string> => {
+export const getTrainingResponse = async (history: ChatMessage[], apiKeys: string[]): Promise<string> => {
     const modelName = 'gemini-3-flash-preview';
     const contents: Content[] = history.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) }));
     const systemInstruction = `You are a helpful AI assistant. Respond conversationally.`;
     
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
          return await ai.models.generateContent({ model: modelName, contents: contents, config: { systemInstruction } });
     });
     return response.text || '';
 };
 
-export const generateContentPlan = async (niche: Niche, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}): Promise<ContentPlanResult> => {
+export const generateContentPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}): Promise<ContentPlanResult> => {
     const { countToGenerate = 5 } = options;
     const modelName = 'gemini-3-pro-preview'; 
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Tạo kế hoạch nội dung cho: ${niche.niche_name.original}.` }] } ];
     
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
@@ -221,12 +259,12 @@ export const generateContentPlan = async (niche: Niche, trainingHistory: ChatMes
     return JSON.parse(response.text) as ContentPlanResult;
 };
 
-export const developVideoIdeas = async (niche: Niche, trainingHistory: ChatMessage[]): Promise<ContentPlanResult> => {
+export const developVideoIdeas = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[]): Promise<ContentPlanResult> => {
     const modelName = 'gemini-3-pro-preview';
     const ideas = (niche.video_ideas || []).map(i => `- ${i.title.original}: ${i.draft_content}`).join('\n');
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Expand these ideas:\n${ideas}` }] } ];
     
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
@@ -240,11 +278,11 @@ export const developVideoIdeas = async (niche: Niche, trainingHistory: ChatMessa
     return JSON.parse(response.text) as ContentPlanResult;
 };
 
-export const generateVideoIdeasForNiche = async (niche: Niche, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}): Promise<{ video_ideas: VideoIdea[] }> => {
+export const generateVideoIdeasForNiche = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}): Promise<{ video_ideas: VideoIdea[] }> => {
     const modelName = 'gemini-3-flash-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Generate 5 viral ideas for "${niche.niche_name.original}".` }] } ];
     
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
@@ -258,11 +296,11 @@ export const generateVideoIdeasForNiche = async (niche: Niche, trainingHistory: 
     return JSON.parse(response.text);
 };
 
-export const analyzeKeywordDirectly = async (idea: string, market: string, trainingHistory: ChatMessage[], productionType: ProductionType = 'faceless'): Promise<AnalysisResult> => {
+export const analyzeKeywordDirectly = async (idea: string, market: string, apiKeys: string[], trainingHistory: ChatMessage[], productionType: ProductionType = 'faceless'): Promise<AnalysisResult> => {
     const modelName = 'gemini-3-pro-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Analyze: "${idea}". Model: ${productionType}.` }] } ];
     
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
@@ -276,11 +314,11 @@ export const analyzeKeywordDirectly = async (idea: string, market: string, train
     return JSON.parse(response.text) as AnalysisResult;
 };
 
-export const generateChannelPlan = async (niche: Niche, trainingHistory: ChatMessage[], options: { isMoreDetailed?: boolean } = {}): Promise<string> => {
+export const generateChannelPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { isMoreDetailed?: boolean } = {}): Promise<string> => {
     const modelName = 'gemini-3-pro-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Tạo kế hoạch kênh YouTube chi tiết trong VIETNAMESE. Data: ${JSON.stringify(niche)}` }] } ];
     
-    const response = await callGeminiWithRetry(async (ai) => {
+    const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
@@ -290,10 +328,10 @@ export const generateChannelPlan = async (niche: Niche, trainingHistory: ChatMes
     return response.text || '';
 };
 
-// ... Remaining implementation logic ...
+// Placeholder for OpenAI functions
+export const validateOpenAiApiKey = async (apiKey: string): Promise<boolean> => { if (!apiKey.trim()) return false; try { const response = await fetch("https://api.openai.com/v1/models", { method: "GET", headers: { "Authorization": `Bearer ${apiKey}` } }); return response.ok; } catch (error) { return false; } };
 export const analyzeNicheIdeaWithOpenAI = async (idea: string, market: string, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: AnalysisOptions = {}): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => { throw new Error("OpenAI Update Required"); };
 export const analyzeKeywordDirectlyWithOpenAI = async (idea: string, market: string, apiKeys: string[], model: string, trainingHistory: ChatMessage[], productionType: ProductionType = 'faceless'): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => { throw new Error("OpenAI Update Required"); };
-export const validateOpenAiApiKey = async (apiKey: string): Promise<boolean> => { if (!apiKey.trim()) return false; try { const response = await fetch("https://api.openai.com/v1/models", { method: "GET", headers: { "Authorization": `Bearer ${apiKey}` } }); return response.ok; } catch (error) { return false; } };
 export const getTrainingResponseWithOpenAI = async (history: ChatMessage[], apiKeys: string[], model: string): Promise<{ result: string, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
 export const generateVideoIdeasForNicheWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}): Promise<{ result: { video_ideas: VideoIdea[] }, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
 export const developVideoIdeasWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[]): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };

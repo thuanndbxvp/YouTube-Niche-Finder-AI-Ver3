@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeNicheIdea, getTrainingResponse, generateContentPlan, developVideoIdeas, generateVideoIdeasForNiche, analyzeKeywordDirectly, generateChannelPlan } from './services/geminiService';
+import { analyzeNicheIdea, getTrainingResponse, generateContentPlan, developVideoIdeas, generateVideoIdeasForNiche, analyzeKeywordDirectly, generateChannelPlan, validateApiKey, validateOpenAiApiKey } from './services/geminiService';
 import type { AnalysisResult, ChatMessage, Part, Niche, FilterLevel, Notification as NotificationType, ProductionType } from './types';
 import SearchBar from './components/SearchBar';
 import ResultsDisplay from './components/ResultsDisplay';
 import Loader from './components/Loader';
 import TrainAiModal from './components/TrainAiModal';
-import { BookmarkIcon, BrainIcon } from './components/icons/Icons';
+import ApiKeyModal from './components/ApiKeyModal';
+import { BookmarkIcon, BrainIcon, KeyIcon } from './components/icons/Icons';
 import InitialSuggestions from './components/InitialSuggestions';
 import PasswordModal from './components/PasswordModal';
 import ChannelPlanModal from './components/ChannelPlanModal';
@@ -86,11 +87,22 @@ const App: React.FC = () => {
   const [competitionLevel, setCompetitionLevel] = useState<FilterLevel>('all');
   const [sustainabilityLevel, setSustainabilityLevel] = useState<FilterLevel>('all');
   
+  const [apiKeys, setApiKeys] = useState<string[]>(() => {
+    const saved = localStorage.getItem('yt_finder_gemini_keys');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [openAiApiKeys, setOpenAiApiKeys] = useState<string[]>(() => {
+    const saved = localStorage.getItem('yt_finder_openai_keys');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [savedNiches, setSavedNiches] = useState<Niche[]>(() => {
     const saved = localStorage.getItem('yt_finder_saved_niches');
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [apiKeyStatuses, setApiKeyStatuses] = useState<ApiKeyStatus[]>([]);
+  const [openAiApiKeyStatuses, setOpenAiApiKeyStatuses] = useState<ApiKeyStatus[]>([]);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
   const [isTrainAiModalOpen, setIsTrainAiModalOpen] = useState<boolean>(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState<boolean>(false);
   const [isChannelPlanModalOpen, setIsChannelPlanModalOpen] = useState<boolean>(false);
@@ -117,15 +129,40 @@ const App: React.FC = () => {
     { value: 'factory', label: 'Factory (Xưởng nội dung)' }
   ];
 
+  const checkAndSetAllApiKeys = async (geminiKeys: string[], openaiKeys: string[]) => {
+      if (geminiKeys.length > 0) {
+        setApiKeyStatuses(geminiKeys.map(() => 'checking'));
+        const results = await Promise.all(geminiKeys.map(k => validateApiKey(k)));
+        setApiKeyStatuses(results.map(v => v ? 'valid' : 'invalid'));
+      } else {
+        setApiKeyStatuses([]);
+      }
+      
+      if (openaiKeys.length > 0) {
+        setOpenAiApiKeyStatuses(openaiKeys.map(() => 'checking'));
+        const results = await Promise.all(openaiKeys.map(k => validateOpenAiApiKey(k)));
+        setOpenAiApiKeyStatuses(results.map(v => v ? 'valid' : 'invalid'));
+      } else {
+        setOpenAiApiKeyStatuses([]);
+      }
+  };
+
+  useEffect(() => { localStorage.setItem('yt_finder_gemini_keys', JSON.stringify(apiKeys)); }, [apiKeys]);
+  useEffect(() => { localStorage.setItem('yt_finder_openai_keys', JSON.stringify(openAiApiKeys)); }, [openAiApiKeys]);
   useEffect(() => { localStorage.setItem('yt_finder_saved_niches', JSON.stringify(savedNiches)); }, [savedNiches]);
   useEffect(() => { localStorage.setItem('yt_finder_channel_plans', JSON.stringify(channelPlanCache)); }, [channelPlanCache]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsAuthChecked(true); });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (_event === 'SIGNED_OUT') { setSavedNiches([]); setTrainingChatHistory(defaultTrainingHistory); } });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (_event === 'SIGNED_OUT') { setApiKeys([]); setOpenAiApiKeys([]); setSavedNiches([]); setTrainingChatHistory(defaultTrainingHistory); } });
     const savedPass = localStorage.getItem('trainingPassword');
     if (savedPass) setTrainingPassword(savedPass);
     
+    // Check keys on load
+    if (apiKeys.length > 0 || openAiApiKeys.length > 0) {
+      checkAndSetAllApiKeys(apiKeys, openAiApiKeys);
+    }
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -157,6 +194,15 @@ const App: React.FC = () => {
   };
   
   const handleGenerateChannelPlan = async (niche: Niche, detailed: boolean = false) => {
+    if (!apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) {
+        return setError({ 
+            title: 'Yêu cầu API Key', 
+            body: 'Vui lòng nhập ít nhất một API Key Gemini hợp lệ để sử dụng tính năng này.', 
+            actionText: 'Cài đặt Key', 
+            onAction: () => setIsApiKeyModalOpen(true) 
+        });
+    }
+
     const nicheName = niche.niche_name.original;
     
     if (channelPlanCache[nicheName] && !detailed) {
@@ -167,7 +213,7 @@ const App: React.FC = () => {
 
     setGeneratingChannelPlan(prev => new Set(prev).add(nicheName));
     try {
-        const result = await generateChannelPlan(niche, trainingChatHistory, { isMoreDetailed: detailed });
+        const result = await generateChannelPlan(niche, apiKeys, trainingChatHistory, { isMoreDetailed: detailed });
         setChannelPlanCache(prev => ({ ...prev, [nicheName]: result }));
         setActivePlanNiche(niche);
         setIsChannelPlanModalOpen(true);
@@ -184,6 +230,11 @@ const App: React.FC = () => {
   };
 
   const handleTrainAiMessage = async (message: string, files: File[]) => {
+    const isGemini = selectedModel.startsWith('gemini');
+    if (isGemini && !apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) {
+        return setError({ title: 'Yêu cầu API Key', body: 'Cần ít nhất một API Key Gemini hợp lệ để huấn luyện.', actionText: 'Cài đặt', onAction: () => setIsApiKeyModalOpen(true) });
+    }
+
     setIsTrainingLoading(true);
     const fileParts = await Promise.all(files.map(fileToGenerativePart));
     const newUserMessage: ChatMessage = { role: 'user', parts: [{ text: message }, ...fileParts] };
@@ -191,7 +242,7 @@ const App: React.FC = () => {
     setTrainingChatHistory(updatedHistory);
 
     try {
-        const aiResponse = await getTrainingResponse(updatedHistory);
+        const aiResponse = await getTrainingResponse(updatedHistory, apiKeys);
         setTrainingChatHistory(prev => [...prev, { role: 'model', parts: [{ text: aiResponse }] }]);
     } catch (err: any) {
         setError({ title: 'Lỗi huấn luyện', body: err.message });
@@ -201,6 +252,9 @@ const App: React.FC = () => {
   };
 
   const runAnalysis = async (idea: string, isNewSearch: boolean, isLoadMore: boolean = false) => {
+    if (selectedModel.startsWith('gemini') && !apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) {
+        return setError({ title: 'Yêu cầu API Key', body: 'Vui lòng cấu hình API Key Gemini hợp lệ.', actionText: 'Cài đặt', onAction: () => setIsApiKeyModalOpen(true) });
+    }
     if (!idea.trim()) return;
 
     if (isLoadMore) setIsLoadingMore(true); else { setIsLoading(true); setAnalysisResult(null); }
@@ -210,14 +264,19 @@ const App: React.FC = () => {
     try {
       let result: AnalysisResult;
       if (analysisType === 'direct' && !isLoadMore) {
-        result = await analyzeKeywordDirectly(idea, market, trainingChatHistory, productionType);
+        result = await analyzeKeywordDirectly(idea, market, apiKeys, trainingChatHistory, productionType);
       } else { 
         const options = { countToGenerate: parseInt(numResults), productionType, filters: { interest: interestLevel, monetization: monetizationLevel, competition: competitionLevel, sustainability: sustainabilityLevel } };
-        result = await analyzeNicheIdea(idea, market, trainingChatHistory, options);
+        result = await analyzeNicheIdea(idea, market, apiKeys, trainingChatHistory, options);
       }
       setAnalysisResult(prev => isLoadMore && prev ? { niches: [...prev.niches, ...result.niches] } : result);
       setAnalysisDepth(p => isNewSearch ? 1 : p + 1);
-    } catch (err: any) { setError({ title: 'Lỗi', body: err.message }); } finally { setIsLoading(false); setIsLoadingMore(false); }
+    } catch (err: any) { 
+        setError({ title: 'Lỗi', body: err.message }); 
+    } finally { 
+      setIsLoading(false); 
+      setIsLoadingMore(false); 
+    }
   };
 
   const handleAnalysis = () => runAnalysis(userInput, true);
@@ -235,6 +294,9 @@ const App: React.FC = () => {
         <button onClick={() => setIsLibraryModalOpen(true)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-sm relative">
           <BookmarkIcon />
           {savedNiches.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-[10px] flex items-center justify-center rounded-full text-white font-bold">{savedNiches.length}</span>}
+        </button>
+        <button onClick={() => setIsApiKeyModalOpen(true)} className="px-4 py-2 bg-teal-600 rounded-md text-sm font-bold flex items-center gap-2 hover:bg-teal-500 transition-colors">
+          <KeyIcon /> <span>Cấu hình API</span>
         </button>
       </header>
       
@@ -331,12 +393,28 @@ const App: React.FC = () => {
         planContent={activePlanNiche ? channelPlanCache[activePlanNiche.niche_name.original] : null} 
         activeNiche={activePlanNiche} 
         theme={theme} 
-        onGenerateMoreDetailedPlan={() => activePlanNiche && handleGenerateChannelPlan(activeNiche, true)} 
+        onGenerateMoreDetailedPlan={() => activePlanNiche && handleGenerateChannelPlan(activePlanNiche, true)} 
         isLoadingMore={activePlanNiche ? generatingChannelPlan.has(activePlanNiche.niche_name.original) : false} 
       />
       
       <TrainAiModal isOpen={isTrainAiModalOpen} onClose={() => setIsTrainAiModalOpen(false)} chatHistory={trainingChatHistory} onSendMessage={handleTrainAiMessage} isLoading={isTrainingLoading} onChangePassword={() => { setPasswordModalMode('change'); setIsPasswordModalOpen(true); }} selectedModel={selectedModel} theme={theme} />
       <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} verifyPassword={(p) => p === trainingPassword} mode={passwordModalMode} theme={theme} onSuccess={(newPass) => { if (passwordModalMode === 'login') { setIsPasswordModalOpen(false); setIsTrainAiModalOpen(true); } else if (newPass) { setTrainingPassword(newPass); localStorage.setItem('trainingPassword', newPass); setIsPasswordModalOpen(false); } }} />
+      <ApiKeyModal 
+          isOpen={isApiKeyModalOpen} 
+          onClose={() => setIsApiKeyModalOpen(false)} 
+          onSaveAndCheckGemini={async (keys) => { setApiKeys(keys); await checkAndSetAllApiKeys(keys, openAiApiKeys); }} 
+          onSaveAndCheckOpenAI={async (keys) => { setOpenAiApiKeys(keys); await checkAndSetAllApiKeys(apiKeys, keys); }} 
+          onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} 
+          onDeleteKey={(i) => setApiKeys(p => p.filter((_, idx) => idx !== i))} 
+          onDeleteOpenAiKey={(i) => setOpenAiApiKeys(p => p.filter((_, idx) => idx !== i))} 
+          currentApiKeys={apiKeys} 
+          activeApiKeyIndex={null} 
+          apiKeyStatuses={apiKeyStatuses} 
+          currentOpenAiApiKeys={openAiApiKeys} 
+          openAiApiKeyStatuses={openAiApiKeyStatuses} 
+          activeOpenAiApiKeyIndex={null} 
+          theme={theme} 
+      />
       <LibraryModal 
         isOpen={isLibraryModalOpen} 
         onClose={() => setIsLibraryModalOpen(false)} 
@@ -371,7 +449,7 @@ const App: React.FC = () => {
         onViewChannelPlan={(n) => handleGenerateChannelPlan(n)} 
         theme={theme} 
       />
-      <ErrorModal isOpen={!!error} onClose={() => setError(null)} title={error?.title || 'Lỗi'} theme={theme}>{error?.body}</ErrorModal>
+      <ErrorModal isOpen={!!error} onClose={() => setError(null)} title={error?.title || 'Lỗi'} theme={theme} actionText={error?.actionText} onAction={error?.onAction}>{error?.body}</ErrorModal>
     </div>
   );
 };
