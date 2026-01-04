@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
@@ -101,7 +100,7 @@ const App: React.FC = () => {
   const [savedNiches, setSavedNiches] = useState<Niche[]>([]);
   const [numResults, setNumResults] = useState<string>('5');
   const [searchPlaceholder, setSearchPlaceholder] = useState<string>("ví dụ: 'Khám phá không gian', 'Dự án DIY tại nhà', 'Nấu ăn'");
-  const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-pro');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3-pro-preview');
   const [analysisType, setAnalysisType] = useState<'direct' | 'related'>('related');
   const [theme, setTheme] = useState<string>('teal');
   const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
@@ -331,7 +330,7 @@ const App: React.FC = () => {
     setSearchPlaceholder(`ví dụ: '${placeholderSuggestions[0]}', '${placeholderSuggestions[1]}', '${placeholderSuggestions[2]}'`);
     
     const storedPassword = localStorage.getItem('trainingPassword');
-    setTrainingPassword(storedPassword || 'Nhocyeu1');
+    setTrainingPassword(storedPassword || '111000');
 
     const handleClickOutside = (event: MouseEvent) => {
       if (themeDropdownRef.current && !themeDropdownRef.current.contains(event.target as Node)) {
@@ -1298,8 +1297,8 @@ const App: React.FC = () => {
                             disabled={isLoading}
                         >
                             <optgroup label="Google Gemini">
-                                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
+                                <option value="gemini-3-flash-preview">Gemini 3 Flash</option>
                             </optgroup>
                             <optgroup label="OpenAI">
                                 <option value="gpt-4o">GPT-4o</option>

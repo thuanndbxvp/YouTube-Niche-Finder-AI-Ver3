@@ -1,3 +1,4 @@
+
 // Fix: Implement Gemini API service functions.
 import { GoogleGenAI, Type, Content } from "@google/genai";
 import type { AnalysisResult, ChatMessage, FilterLevel, Niche, ContentPlanResult, VideoIdea } from '../types';
@@ -193,7 +194,7 @@ export const analyzeNicheIdea = async (
   onKeyFailure: (index: number) => void
 ): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => {
     const { existingNichesToAvoid = [], countToGenerate = 10, filters = {} } = options;
-    const modelName = 'gemini-2.5-pro';
+    const modelName = 'gemini-3-pro-preview';
 
     const userPrompt = `Analyze the YouTube niche idea: "${idea}". Target market: ${market}.`;
     
@@ -243,7 +244,7 @@ export const getTrainingResponse = async (
     apiKeys: string[],
     onKeyFailure: (index: number) => void
 ): Promise<{ result: string, successfulKeyIndex: number }> => {
-    const modelName = 'gemini-2.5-flash';
+    const modelName = 'gemini-3-flash-preview';
 
     const contents: Content[] = history.map(msg => ({
         role: msg.role,
@@ -344,7 +345,7 @@ export const generateContentPlan = async (
   onKeyFailure: (index: number) => void
 ): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => {
     const { existingIdeasToAvoid = [], countToGenerate = 5 } = options;
-    const modelName = 'gemini-2.5-pro'; 
+    const modelName = 'gemini-3-pro-preview'; 
     const userPrompt = `Dựa trên ngách sau đây, hãy tạo một kế hoạch nội dung chi tiết.\n\nTên ngách: ${niche.niche_name.original} (${niche.niche_name.translated})\nMô tả: ${niche.description}\nĐối tượng: ${niche.audience_demographics}`;
     
     const contents: Content[] = [
@@ -410,7 +411,7 @@ export const developVideoIdeas = async (
   trainingHistory: ChatMessage[],
   onKeyFailure: (index: number) => void
 ): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => {
-    const modelName = 'gemini-2.5-pro';
+    const modelName = 'gemini-3-pro-preview';
     
     const ideasToDevelop = (niche.video_ideas || []).map(idea => 
         `- Title (Original): ${idea.title.original}\n  Title (Translated): ${idea.title.translated}\n  Draft Content: ${idea.draft_content}`
@@ -511,7 +512,7 @@ export const generateVideoIdeasForNiche = async (
     onKeyFailure: (index: number) => void
 ): Promise<{ result: { video_ideas: VideoIdea[] }, successfulKeyIndex: number }> => {
     const { existingIdeasToAvoid = [] } = options;
-    const modelName = 'gemini-2.5-flash';
+    const modelName = 'gemini-3-flash-preview';
     const userPrompt = `Please generate 5 video ideas for the YouTube niche: "${niche.niche_name.original}".`;
     
     const contents: Content[] = [
@@ -557,7 +558,7 @@ export const validateApiKey = async (apiKey: string): Promise<boolean> => {
     try {
         const ai = getGenAI(apiKey);
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3-flash-preview',
             contents: 'Hello'
         });
         return !!response.text;
@@ -594,7 +595,7 @@ export const analyzeKeywordDirectly = async (
   trainingHistory: ChatMessage[],
   onKeyFailure: (index: number) => void
 ): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => {
-    const modelName = 'gemini-2.5-pro';
+    const modelName = 'gemini-3-pro-preview';
     const userPrompt = `Analyze this specific YouTube niche idea in detail: "${idea}". Target market: ${market}.`;
     
     const contents: Content[] = [
@@ -672,7 +673,7 @@ export const generateChannelPlan = async (
     options: ChannelPlanOptions = {}
 ): Promise<{ result: string, successfulKeyIndex: number }> => {
     const { isMoreDetailed = false } = options;
-    const modelName = 'gemini-2.5-pro';
+    const modelName = 'gemini-3-pro-preview';
     
     const formattedNicheData = formatNicheDataForPrompt(niche);
     const userPrompt = `${userChannelPlanInstruction}\n\n${formattedNicheData}`;
