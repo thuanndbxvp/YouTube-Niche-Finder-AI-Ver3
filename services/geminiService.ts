@@ -24,11 +24,15 @@ async function callGeminiWithRetry(
     // Pick a key. If retrying, we might pick a different one next time or filter out bad ones in a more complex implementation.
     // For now, random selection offers basic load balancing.
     const apiKey = getRandomKey(apiKeys);
-    const ai = new GoogleGenAI({ apiKey });
+    
+    // Clean the key string to remove potential whitespace or newlines from copy-paste
+    const cleanKey = apiKey.trim();
+    const ai = new GoogleGenAI({ apiKey: cleanKey });
 
     try {
         return await action(ai);
     } catch (error: any) {
+        console.error("Gemini API Error:", error);
         if (retries > 0 && (error.status === 429 || error.status >= 500)) {
             await new Promise(resolve => setTimeout(resolve, delay));
             // Try with a different key if available by filtering out the one that just failed?
@@ -42,16 +46,18 @@ async function callGeminiWithRetry(
 }
 
 export const validateApiKey = async (apiKey: string): Promise<boolean> => {
-    if (!apiKey) return false;
+    if (!apiKey || !apiKey.trim()) return false;
     try {
-        const ai = new GoogleGenAI({ apiKey });
-        // Use a lightweight model for validation
+        const cleanKey = apiKey.trim();
+        const ai = new GoogleGenAI({ apiKey: cleanKey });
+        // Use a stable, lightweight model for validation (gemini-2.0-flash is standard and widely available)
         await ai.models.generateContent({
-            model: 'gemini-2.5-flash-latest',
-            contents: 'test',
+            model: 'gemini-2.0-flash', 
+            contents: { parts: [{ text: 'test' }] },
         });
         return true;
     } catch (error) {
+        console.warn("API Key validation failed for key ending in ...", apiKey.slice(-4), error);
         return false;
     }
 };
