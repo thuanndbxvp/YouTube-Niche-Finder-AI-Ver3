@@ -4,7 +4,7 @@ import type { Niche } from '../types';
 import { themes } from '../theme';
 import {
   DollarSignIcon, UserGroupIcon, SparklesIcon, TrendingUpIcon, LightBulbIcon,
-  TargetIcon, ShieldCheckIcon, DownloadIcon, ClipboardListIcon, BrainIcon
+  TargetIcon, ShieldCheckIcon, DownloadIcon, ClipboardListIcon, BrainIcon, BookmarkIcon
 } from './icons/Icons';
 
 interface NicheCardProps {
@@ -46,7 +46,7 @@ const AnalysisMetric: React.FC<{ icon: React.ReactNode; label: string; score: nu
     );
 };
 
-const NicheCard: React.FC<NicheCardProps> = ({ niche, index, isSaved, onExportNiche, onGenerateChannelPlan, isGeneratingChannelPlan, theme, isDirectAnalysis, channelPlanCache }) => {
+const NicheCard: React.FC<NicheCardProps> = ({ niche, index, isSaved, onExportNiche, onGenerateChannelPlan, isGeneratingChannelPlan, theme, isDirectAnalysis, channelPlanCache, onUseNiche }) => {
     const currentTheme = themes[theme] || themes.teal;
     const hasChannelPlan = !!channelPlanCache[niche.niche_name.original];
 
@@ -60,7 +60,14 @@ const NicheCard: React.FC<NicheCardProps> = ({ niche, index, isSaved, onExportNi
                     <h3 className="text-lg text-gray-400">{niche.niche_name.translated}</h3>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={() => onExportNiche(niche)} className="p-2 bg-gray-700 rounded-lg text-gray-300 hover:text-white"><DownloadIcon /></button>
+                    <button 
+                        onClick={() => onUseNiche(niche)} 
+                        title={isSaved ? "Bỏ lưu" : "Lưu vào thư viện"} 
+                        className={`p-2 rounded-lg border transition-colors ${isSaved ? currentTheme.bg + ' text-white ' + currentTheme.border : 'bg-gray-700 border-transparent text-gray-300 hover:text-white'}`}
+                    >
+                        <BookmarkIcon />
+                    </button>
+                    <button onClick={() => onExportNiche(niche)} title="Xuất file TXT" className="p-2 bg-gray-700 rounded-lg text-gray-300 hover:text-white"><DownloadIcon /></button>
                     <button onClick={() => onGenerateChannelPlan(niche)} disabled={isGeneratingChannelPlan} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 ${currentTheme.bg} text-white`}>
                         <ClipboardListIcon /> {hasChannelPlan ? 'Xem Kế Hoạch' : 'Lập kế hoạch xây kênh'}
                     </button>
