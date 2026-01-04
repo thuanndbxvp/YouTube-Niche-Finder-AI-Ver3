@@ -50,9 +50,9 @@ export const validateApiKey = async (apiKey: string): Promise<boolean> => {
     try {
         const cleanKey = apiKey.trim();
         const ai = new GoogleGenAI({ apiKey: cleanKey });
-        // Use a stable, lightweight model for validation (gemini-2.0-flash is standard and widely available)
+        // Upgrade: Use gemini-3-flash-preview for fast and cost-effective validation
         await ai.models.generateContent({
-            model: 'gemini-2.0-flash', 
+            model: 'gemini-3-flash-preview', 
             contents: { parts: [{ text: 'test' }] },
         });
         return true;
@@ -180,7 +180,7 @@ const getProductionTypeDefinition = (type: ProductionType) => {
 const analysisSystemInstruction = (countToGenerate: number, existingNichesToAvoid: string[], filters: AnalysisFilters, productionType: ProductionType) => {
     const productionDef = getProductionTypeDefinition(productionType);
     
-    return `You are a world-class YouTube Niche Analysis AI (Gemini 3 Pro). Your goal is to analyze a niche idea specifically optimized for the user's chosen production style.
+    return `You are a world-class YouTube Niche Analysis AI (Gemini 3). Your goal is to analyze a niche idea specifically optimized for the user's chosen production style.
 
 --- CHOSEN PRODUCTION STYLE ---
 ${productionDef}
@@ -206,11 +206,11 @@ export const analyzeNicheIdea = async (
   idea: string,
   market: string,
   apiKeys: string[],
+  modelName: string, // Updated to accept model name dynamically
   trainingHistory: ChatMessage[],
   options: AnalysisOptions = {}
 ): Promise<AnalysisResult> => {
     const { existingNichesToAvoid = [], countToGenerate = 10, filters = {}, productionType = 'faceless' } = options;
-    const modelName = 'gemini-3-pro-preview';
     const userPrompt = `Analyze the YouTube niche idea: "${idea}". Market: ${market}. Model: ${productionType}.`;
     
     const contents: Content[] = [
@@ -223,7 +223,7 @@ export const analyzeNicheIdea = async (
 
     const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
-            model: modelName,
+            model: modelName, // Uses the model selected in App.tsx (gemini-3-pro-preview or gemini-3-flash-preview)
             contents: contents,
             config: {
                 systemInstruction: analysisSystemInstruction(countToGenerate, existingNichesToAvoid, filters, productionType),
@@ -236,6 +236,7 @@ export const analyzeNicheIdea = async (
 };
 
 export const getTrainingResponse = async (history: ChatMessage[], apiKeys: string[]): Promise<string> => {
+    // Upgraded to Gemini 3 Flash for quick, conversational responses
     const modelName = 'gemini-3-flash-preview';
     const contents: Content[] = history.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) }));
     const systemInstruction = `You are a helpful AI assistant. Respond conversationally.`;
@@ -248,6 +249,7 @@ export const getTrainingResponse = async (history: ChatMessage[], apiKeys: strin
 
 export const generateContentPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}): Promise<ContentPlanResult> => {
     const { countToGenerate = 5 } = options;
+    // Keep high-value tasks on Gemini 3 Pro for best reasoning
     const modelName = 'gemini-3-pro-preview'; 
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Tạo kế hoạch nội dung cho: ${niche.niche_name.original}.` }] } ];
     
@@ -266,6 +268,7 @@ export const generateContentPlan = async (niche: Niche, apiKeys: string[], train
 };
 
 export const developVideoIdeas = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[]): Promise<ContentPlanResult> => {
+    // Keep high-value tasks on Gemini 3 Pro for best reasoning
     const modelName = 'gemini-3-pro-preview';
     const ideas = (niche.video_ideas || []).map(i => `- ${i.title.original}: ${i.draft_content}`).join('\n');
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Expand these ideas:\n${ideas}` }] } ];
@@ -285,6 +288,7 @@ export const developVideoIdeas = async (niche: Niche, apiKeys: string[], trainin
 };
 
 export const generateVideoIdeasForNiche = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}): Promise<{ video_ideas: VideoIdea[] }> => {
+    // Use Gemini 3 Flash for speed on idea generation
     const modelName = 'gemini-3-flash-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Generate 5 viral ideas for "${niche.niche_name.original}".` }] } ];
     
@@ -302,13 +306,19 @@ export const generateVideoIdeasForNiche = async (niche: Niche, apiKeys: string[]
     return JSON.parse(response.text);
 };
 
-export const analyzeKeywordDirectly = async (idea: string, market: string, apiKeys: string[], trainingHistory: ChatMessage[], productionType: ProductionType = 'faceless'): Promise<AnalysisResult> => {
-    const modelName = 'gemini-3-pro-preview';
+export const analyzeKeywordDirectly = async (
+    idea: string, 
+    market: string, 
+    apiKeys: string[], 
+    modelName: string, // Updated to accept model name dynamically
+    trainingHistory: ChatMessage[], 
+    productionType: ProductionType = 'faceless'
+): Promise<AnalysisResult> => {
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Analyze: "${idea}". Model: ${productionType}.` }] } ];
     
     const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
-            model: modelName,
+            model: modelName, // Uses the model selected in App.tsx
             contents: contents,
             config: {
                 systemInstruction: analysisSystemInstruction(1, [], {}, productionType) + "\nDO NOT generate sub-niches. Only analyze the user input.",
@@ -321,6 +331,7 @@ export const analyzeKeywordDirectly = async (idea: string, market: string, apiKe
 };
 
 export const generateChannelPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { isMoreDetailed?: boolean } = {}): Promise<string> => {
+    // Keep high-value tasks on Gemini 3 Pro
     const modelName = 'gemini-3-pro-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Tạo kế hoạch kênh YouTube chi tiết trong VIETNAMESE. Data: ${JSON.stringify(niche)}` }] } ];
     

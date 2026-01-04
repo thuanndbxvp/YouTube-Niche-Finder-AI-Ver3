@@ -62,7 +62,7 @@ const defaultTrainingHistory: ChatMessage[] = [
     { role: 'model', parts: [{ text: 'Đã nhớ cách tìm từ khóa.' }] },
     { role: 'user', parts: [{ text: `Kho kiến thức ngách:\n${nicheKnowledgeBase}` }] },
     { role: 'model', parts: [{ text: 'Đã tiếp thu kho ngách.' }] },
-    { role: 'model', parts: [{ text: 'Chào bạn, tôi là AI phân tích ngách YouTube Gemini 3 Pro. Bạn cần hỗ trợ gì?'}] }
+    { role: 'model', parts: [{ text: 'Chào bạn, tôi là AI phân tích ngách YouTube Gemini 3. Bạn cần hỗ trợ gì?'}] }
 ];
 
 const App: React.FC = () => {
@@ -264,10 +264,12 @@ const App: React.FC = () => {
     try {
       let result: AnalysisResult;
       if (analysisType === 'direct' && !isLoadMore) {
-        result = await analyzeKeywordDirectly(idea, market, apiKeys, trainingChatHistory, productionType);
+        // Pass selectedModel to the direct analysis function
+        result = await analyzeKeywordDirectly(idea, market, apiKeys, selectedModel, trainingChatHistory, productionType);
       } else { 
         const options = { countToGenerate: parseInt(numResults), productionType, filters: { interest: interestLevel, monetization: monetizationLevel, competition: competitionLevel, sustainability: sustainabilityLevel } };
-        result = await analyzeNicheIdea(idea, market, apiKeys, trainingChatHistory, options);
+        // Pass selectedModel to the niche idea analysis function
+        result = await analyzeNicheIdea(idea, market, apiKeys, selectedModel, trainingChatHistory, options);
       }
       setAnalysisResult(prev => isLoadMore && prev ? { niches: [...prev.niches, ...result.niches] } : result);
       setAnalysisDepth(p => isNewSearch ? 1 : p + 1);
@@ -303,7 +305,7 @@ const App: React.FC = () => {
       <main className="container mx-auto px-4 py-16 flex flex-col items-center">
         <div className="max-w-4xl w-full text-center space-y-8">
           <h1 className="text-4xl font-bold">YouTube Niche Finder <span className={`bg-gradient-to-r ${currentTheme.gradient} text-transparent bg-clip-text`}>AI</span></h1>
-          <p className="text-gray-400">Hệ thống phân tích YouTube sử dụng Gemini 3 Pro để tối ưu hóa ngách theo mô hình sản xuất của bạn.</p>
+          <p className="text-gray-400">Hệ thống phân tích YouTube sử dụng Gemini 3 để tối ưu hóa ngách theo mô hình sản xuất của bạn.</p>
 
           <SearchBar userInput={userInput} setUserInput={setUserInput} handleAnalysis={handleAnalysis} isLoading={isLoading} placeholder={searchPlaceholder} theme={currentTheme} />
           
