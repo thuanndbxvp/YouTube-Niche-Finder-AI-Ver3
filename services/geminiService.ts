@@ -82,26 +82,18 @@ const responseSchema = {
                         required: ["suitability_score", "reasoning", "scalability"]
                     },
                     content_strategy: { type: Type.STRING },
-                    video_ideas: {
+                    target_keywords: {
                         type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                title: {
-                                    type: Type.OBJECT,
-                                    properties: {
-                                        original: { type: Type.STRING },
-                                        translated: { type: Type.STRING }
-                                    },
-                                    required: ["original", "translated"]
-                                },
-                                draft_content: { type: Type.STRING }
-                            },
-                            required: ["title", "draft_content"]
-                        }
+                        items: { type: Type.STRING },
+                        description: "Tối thiểu 5 từ khóa mà khán giả thường tìm kiếm trong ngách này."
+                    },
+                    content_sources: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                        description: "Danh sách các nguồn tư liệu (báo, blog, website) có thể lấy nội dung."
                     }
                 },
-                required: ["niche_name", "description", "audience_demographics", "analysis", "production_analysis", "content_strategy"]
+                required: ["niche_name", "description", "audience_demographics", "analysis", "production_analysis", "content_strategy", "target_keywords", "content_sources"]
             }
         }
     },
@@ -142,9 +134,11 @@ ${productionDef}
 --- MANDATORY TASKS ---
 1. Analyze the user's idea and generate exactly ${countToGenerate} distinct sub-niches/angles.
 2. For each niche, provide a 'production_analysis' in VIETNAMESE evaluated against the chosen style ("${productionType}").
-3. Evaluate suitability (1-100), reasoning (why it fits this model), and scalability (how to systemize/replicate).
-4. All descriptive text MUST be in VIETNAMESE.
-5. Return 'video_ideas' as an empty array [].`;
+3. IMPORTANT: Provide a list of at least 5 HIGH-VOLUME SEARCH KEYWORDS (target_keywords) relevant to this niche in the target market's language.
+4. IMPORTANT: List specific types of content sources (content_sources) like blogs, specific media sites, or government portals where data can be retrieved.
+5. Evaluating suitability (1-100), reasoning (why it fits this model), and scalability (how to systemize/replicate).
+6. All descriptive text MUST be in VIETNAMESE.
+7. Return 'video_ideas' as an empty array [].`;
 };
 
 interface AnalysisOptions {

@@ -4,7 +4,8 @@ import type { Niche } from '../types';
 import { themes } from '../theme';
 import {
   DollarSignIcon, UserGroupIcon, SparklesIcon, TrendingUpIcon, LightBulbIcon,
-  TargetIcon, ShieldCheckIcon, DownloadIcon, ClipboardListIcon, BrainIcon, BookmarkIcon
+  TargetIcon, ShieldCheckIcon, DownloadIcon, ClipboardListIcon, BrainIcon, BookmarkIcon,
+  TagIcon, CollectionIcon
 } from './icons/Icons';
 
 interface NicheCardProps {
@@ -84,6 +85,31 @@ const NicheCard: React.FC<NicheCardProps> = ({ niche, index, isSaved, onExportNi
                             <p className="text-sm text-gray-300">{niche.production_analysis.scalability}</p>
                         </div>
                     </div>
+                    
+                    {/* Thêm phần Keywords & Sources */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700/50">
+                            <h5 className="font-bold text-gray-300 flex items-center gap-2 mb-3"><TagIcon /> Keywords gợi ý</h5>
+                            <div className="flex flex-wrap gap-2">
+                                {niche.target_keywords?.map((kw, i) => (
+                                    <span key={i} className="px-2 py-1 bg-gray-700/50 border border-gray-600 rounded text-[11px] text-gray-300 font-mono">
+                                        {kw}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                        <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700/50">
+                            <h5 className="font-bold text-gray-300 flex items-center gap-2 mb-3"><CollectionIcon /> Nguồn tư liệu</h5>
+                            <ul className="space-y-1">
+                                {niche.content_sources?.map((src, i) => (
+                                    <li key={i} className="text-xs text-gray-400 flex items-start gap-2">
+                                        <span className={currentTheme.text}>•</span> {src}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="bg-gray-900/30 p-4 rounded-lg border border-gray-700/50">
                             <h5 className="font-bold text-gray-300 flex items-center gap-2 mb-2"><TargetIcon /> Đối tượng</h5>

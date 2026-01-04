@@ -56,6 +56,8 @@ export interface Niche {
     scalability: string;
   };
   content_strategy: string;
+  target_keywords: string[]; // Thêm danh sách từ khóa
+  content_sources: string[];  // Thêm nguồn tư liệu
   video_ideas?: VideoIdea[];
   channel_plan_content?: string;
   detailed_content_plan?: ContentPlanResult;
