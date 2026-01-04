@@ -1,12 +1,23 @@
 
-// Fix: Implement Gemini API service functions.
-import { GoogleGenAI, Type, Content } from "@google/genai";
+// Fix: Implement Gemini API service functions following the latest guidelines.
+import { GoogleGenAI, Type, Content, GenerateContentResponse } from "@google/genai";
 import type { AnalysisResult, ChatMessage, FilterLevel, Niche, ContentPlanResult, VideoIdea, ProductionType } from '../types';
 
 /**
- * Creates a GoogleGenAI instance with a specific API key.
+ * Retries a Gemini API call with exponential backoff.
  */
-const getGenAI = (apiKey: string) => new GoogleGenAI({ apiKey });
+async function callGeminiWithRetry(action: (ai: GoogleGenAI) => Promise<GenerateContentResponse>, retries = 3, delay = 1000): Promise<GenerateContentResponse> {
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    return await action(ai);
+  } catch (error: any) {
+    if (retries > 0 && (error.status === 429 || error.status >= 500)) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return callGeminiWithRetry(action, retries - 1, delay * 2);
+    }
+    throw error;
+  }
+}
 
 interface AnalysisFilters {
     interest?: FilterLevel;
@@ -148,36 +159,12 @@ interface AnalysisOptions {
   productionType?: ProductionType;
 }
 
-const executeWithRetry = async <T>(
-    apiKeys: string[], 
-    action: (ai: GoogleGenAI) => Promise<T>,
-    onKeyFailure: (index: number) => void
-): Promise<{ result: T; successfulKeyIndex: number }> => {
-    if (!apiKeys || apiKeys.length === 0) throw new Error("Vui lòng cung cấp ít nhất một API Key.");
-    let lastError: Error | null = null;
-    for (let i = 0; i < apiKeys.length; i++) {
-        const key = apiKeys[i];
-        if (!key.trim()) continue;
-        try {
-            const ai = getGenAI(key);
-            const result = await action(ai);
-            return { result, successfulKeyIndex: i };
-        } catch (err) {
-            onKeyFailure(i);
-            lastError = err as Error;
-        }
-    }
-    throw new Error(`Lỗi: ${lastError?.message || 'Không có key hợp lệ.'}`);
-}
-
 export const analyzeNicheIdea = async (
   idea: string,
   market: string,
-  apiKeys: string[],
   trainingHistory: ChatMessage[],
-  options: AnalysisOptions = {},
-  onKeyFailure: (index: number) => void
-): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => {
+  options: AnalysisOptions = {}
+): Promise<AnalysisResult> => {
     const { existingNichesToAvoid = [], countToGenerate = 10, filters = {}, productionType = 'faceless' } = options;
     const modelName = 'gemini-3-pro-preview';
     const userPrompt = `Analyze the YouTube niche idea: "${idea}". Market: ${market}. Model: ${productionType}.`;
@@ -190,8 +177,8 @@ export const analyzeNicheIdea = async (
         { role: 'user', parts: [{ text: userPrompt }] }
     ];
 
-    const action = async (ai: GoogleGenAI) => {
-        const response = await ai.models.generateContent({
+    const response = await callGeminiWithRetry(async (ai) => {
+        return await ai.models.generateContent({
             model: modelName,
             contents: contents,
             config: {
@@ -200,29 +187,28 @@ export const analyzeNicheIdea = async (
                 responseSchema: responseSchema
             }
         });
-        return JSON.parse(response.text) as AnalysisResult;
-    };
-    
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    });
+    return JSON.parse(response.text) as AnalysisResult;
 };
 
-export const getTrainingResponse = async (history: ChatMessage[], apiKeys: string[], onKeyFailure: (index: number) => void): Promise<{ result: string, successfulKeyIndex: number }> => {
+export const getTrainingResponse = async (history: ChatMessage[]): Promise<string> => {
     const modelName = 'gemini-3-flash-preview';
     const contents: Content[] = history.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) }));
     const systemInstruction = `You are a helpful AI assistant. Respond conversationally.`;
-    const action = async (ai: GoogleGenAI) => {
-         const response = await ai.models.generateContent({ model: modelName, contents: contents, config: { systemInstruction } });
-        return response.text;
-    };
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    
+    const response = await callGeminiWithRetry(async (ai) => {
+         return await ai.models.generateContent({ model: modelName, contents: contents, config: { systemInstruction } });
+    });
+    return response.text || '';
 };
 
-export const generateContentPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}, onKeyFailure: (index: number) => void): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => {
+export const generateContentPlan = async (niche: Niche, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}): Promise<ContentPlanResult> => {
     const { countToGenerate = 5 } = options;
     const modelName = 'gemini-3-pro-preview'; 
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Tạo kế hoạch nội dung cho: ${niche.niche_name.original}.` }] } ];
-    const action = async (ai: GoogleGenAI) => {
-        const response = await ai.models.generateContent({
+    
+    const response = await callGeminiWithRetry(async (ai) => {
+        return await ai.models.generateContent({
             model: modelName,
             contents: contents,
             config: {
@@ -231,17 +217,17 @@ export const generateContentPlan = async (niche: Niche, apiKeys: string[], train
                 responseSchema: { type: Type.OBJECT, properties: { content_ideas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.OBJECT, properties: { original: { type: Type.STRING }, translated: { type: Type.STRING } }, required: ["original", "translated"] }, hook: { type: Type.STRING }, main_points: { type: Type.ARRAY, items: { type: Type.STRING } }, call_to_action: { type: Type.STRING }, visual_suggestions: { type: Type.STRING } }, required: ["title", "hook", "main_points", "call_to_action", "visual_suggestions"] } } }, required: ["content_ideas"] }
             }
         });
-        return JSON.parse(response.text) as ContentPlanResult;
-    };
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    });
+    return JSON.parse(response.text) as ContentPlanResult;
 };
 
-export const developVideoIdeas = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], onKeyFailure: (index: number) => void): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => {
+export const developVideoIdeas = async (niche: Niche, trainingHistory: ChatMessage[]): Promise<ContentPlanResult> => {
     const modelName = 'gemini-3-pro-preview';
     const ideas = (niche.video_ideas || []).map(i => `- ${i.title.original}: ${i.draft_content}`).join('\n');
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Expand these ideas:\n${ideas}` }] } ];
-    const action = async (ai: GoogleGenAI) => {
-        const response = await ai.models.generateContent({
+    
+    const response = await callGeminiWithRetry(async (ai) => {
+        return await ai.models.generateContent({
             model: modelName,
             contents: contents,
             config: {
@@ -250,16 +236,16 @@ export const developVideoIdeas = async (niche: Niche, apiKeys: string[], trainin
                 responseSchema: { type: Type.OBJECT, properties: { content_ideas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.OBJECT, properties: { original: { type: Type.STRING }, translated: { type: Type.STRING } }, required: ["original", "translated"] }, hook: { type: Type.STRING }, main_points: { type: Type.ARRAY, items: { type: Type.STRING } }, call_to_action: { type: Type.STRING }, visual_suggestions: { type: Type.STRING } }, required: ["title", "hook", "main_points", "call_to_action", "visual_suggestions"] } } }, required: ["content_ideas"] }
             }
         });
-        return JSON.parse(response.text) as ContentPlanResult;
-    };
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    });
+    return JSON.parse(response.text) as ContentPlanResult;
 };
 
-export const generateVideoIdeasForNiche = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}, onKeyFailure: (index: number) => void): Promise<{ result: { video_ideas: VideoIdea[] }, successfulKeyIndex: number }> => {
+export const generateVideoIdeasForNiche = async (niche: Niche, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}): Promise<{ video_ideas: VideoIdea[] }> => {
     const modelName = 'gemini-3-flash-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts.map(p => (p.inlineData ? { inlineData: p.inlineData } : { text: p.text || '' })) })), { role: 'user', parts: [{ text: `Generate 5 viral ideas for "${niche.niche_name.original}".` }] } ];
-    const action = async (ai: GoogleGenAI) => {
-        const response = await ai.models.generateContent({
+    
+    const response = await callGeminiWithRetry(async (ai) => {
+        return await ai.models.generateContent({
             model: modelName,
             contents: contents,
             config: {
@@ -268,25 +254,16 @@ export const generateVideoIdeasForNiche = async (niche: Niche, apiKeys: string[]
                 responseSchema: { type: Type.OBJECT, properties: { video_ideas: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { title: { type: Type.OBJECT, properties: { original: { type: Type.STRING }, translated: { type: Type.STRING } }, required: ["original", "translated"] }, draft_content: { type: Type.STRING } }, required: ["title", "draft_content"] } } }, required: ["video_ideas"] }
             }
         });
-        return JSON.parse(response.text);
-    };
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    });
+    return JSON.parse(response.text);
 };
 
-export const validateApiKey = async (apiKey: string): Promise<boolean> => {
-    if (!apiKey.trim()) return false;
-    try {
-        const ai = getGenAI(apiKey);
-        const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: 'Hi' });
-        return !!response.text;
-    } catch (error) { return false; }
-};
-
-export const analyzeKeywordDirectly = async (idea: string, market: string, apiKeys: string[], trainingHistory: ChatMessage[], onKeyFailure: (index: number) => void, productionType: ProductionType = 'faceless'): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => {
+export const analyzeKeywordDirectly = async (idea: string, market: string, trainingHistory: ChatMessage[], productionType: ProductionType = 'faceless'): Promise<AnalysisResult> => {
     const modelName = 'gemini-3-pro-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Analyze: "${idea}". Model: ${productionType}.` }] } ];
-    const action = async (ai: GoogleGenAI) => {
-        const response = await ai.models.generateContent({
+    
+    const response = await callGeminiWithRetry(async (ai) => {
+        return await ai.models.generateContent({
             model: modelName,
             contents: contents,
             config: {
@@ -295,31 +272,30 @@ export const analyzeKeywordDirectly = async (idea: string, market: string, apiKe
                 responseSchema: responseSchema
             }
         });
-        return JSON.parse(response.text) as AnalysisResult;
-    };
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    });
+    return JSON.parse(response.text) as AnalysisResult;
 };
 
-export const generateChannelPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], onKeyFailure: (index: number) => void, options: { isMoreDetailed?: boolean } = {}): Promise<{ result: string, successfulKeyIndex: number }> => {
+export const generateChannelPlan = async (niche: Niche, trainingHistory: ChatMessage[], options: { isMoreDetailed?: boolean } = {}): Promise<string> => {
     const modelName = 'gemini-3-pro-preview';
     const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Tạo kế hoạch kênh YouTube chi tiết trong VIETNAMESE. Data: ${JSON.stringify(niche)}` }] } ];
-    const action = async (ai: GoogleGenAI) => {
-        const response = await ai.models.generateContent({
+    
+    const response = await callGeminiWithRetry(async (ai) => {
+        return await ai.models.generateContent({
             model: modelName,
             contents: contents,
             config: { systemInstruction: `You are a YouTube growth expert. Plan must be in VIETNAMESE with markdown headers.` }
         });
-        return response.text;
-    };
-    return await executeWithRetry(apiKeys, action, onKeyFailure);
+    });
+    return response.text || '';
 };
 
 // ... Remaining implementation logic ...
-export const analyzeNicheIdeaWithOpenAI = async (idea: string, market: string, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: AnalysisOptions = {}, onKeyFailure: (index: number) => void): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => { throw new Error("OpenAI Update Required"); };
-export const analyzeKeywordDirectlyWithOpenAI = async (idea: string, market: string, apiKeys: string[], model: string, trainingHistory: ChatMessage[], onKeyFailure: (index: number) => void, productionType: ProductionType = 'faceless'): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => { throw new Error("OpenAI Update Required"); };
+export const analyzeNicheIdeaWithOpenAI = async (idea: string, market: string, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: AnalysisOptions = {}): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => { throw new Error("OpenAI Update Required"); };
+export const analyzeKeywordDirectlyWithOpenAI = async (idea: string, market: string, apiKeys: string[], model: string, trainingHistory: ChatMessage[], productionType: ProductionType = 'faceless'): Promise<{ result: AnalysisResult, successfulKeyIndex: number }> => { throw new Error("OpenAI Update Required"); };
 export const validateOpenAiApiKey = async (apiKey: string): Promise<boolean> => { if (!apiKey.trim()) return false; try { const response = await fetch("https://api.openai.com/v1/models", { method: "GET", headers: { "Authorization": `Bearer ${apiKey}` } }); return response.ok; } catch (error) { return false; } };
-export const getTrainingResponseWithOpenAI = async (history: ChatMessage[], apiKeys: string[], model: string, onKeyFailure: (index: number) => void): Promise<{ result: string, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
-export const generateVideoIdeasForNicheWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}, onKeyFailure: (index: number) => void): Promise<{ result: { video_ideas: VideoIdea[] }, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
-export const developVideoIdeasWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], onKeyFailure: (index: number) => void): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
-export const generateContentPlanWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}, onKeyFailure: (index: number) => void): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
-export const generateChannelPlanWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], onKeyFailure: (index: number) => void, options: { isMoreDetailed?: boolean } = {}): Promise<{ result: string, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
+export const getTrainingResponseWithOpenAI = async (history: ChatMessage[], apiKeys: string[], model: string): Promise<{ result: string, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
+export const generateVideoIdeasForNicheWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[] } = {}): Promise<{ result: { video_ideas: VideoIdea[] }, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
+export const developVideoIdeasWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[]): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
+export const generateContentPlanWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: { existingIdeasToAvoid?: string[], countToGenerate?: number } = {}): Promise<{ result: ContentPlanResult, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };
+export const generateChannelPlanWithOpenAI = async (niche: Niche, apiKeys: string[], model: string, trainingHistory: ChatMessage[], options: { isMoreDetailed?: boolean } = {}): Promise<{ result: string, successfulKeyIndex: number }> => { throw new Error("Not implemented"); };

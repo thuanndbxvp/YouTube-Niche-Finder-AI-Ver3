@@ -2,24 +2,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import type { Session } from '@supabase/supabase-js';
-import { analyzeNicheIdea, getTrainingResponse, generateContentPlan, validateApiKey, developVideoIdeas, generateVideoIdeasForNiche, validateOpenAiApiKey, analyzeNicheIdeaWithOpenAI, generateVideoIdeasForNicheWithOpenAI, developVideoIdeasWithOpenAI, generateContentPlanWithOpenAI, analyzeKeywordDirectly, analyzeKeywordDirectlyWithOpenAI, getTrainingResponseWithOpenAI, generateChannelPlan, generateChannelPlanWithOpenAI } from './services/geminiService';
-import type { AnalysisResult, ChatMessage, Part, Niche, FilterLevel, ContentPlanResult, Notification as NotificationType, VideoIdea, ProductionType } from './types';
+import { analyzeNicheIdea, getTrainingResponse, generateContentPlan, developVideoIdeas, generateVideoIdeasForNiche, analyzeKeywordDirectly, generateChannelPlan } from './services/geminiService';
+import type { AnalysisResult, ChatMessage, Part, Niche, FilterLevel, Notification as NotificationType, ProductionType } from './types';
 import SearchBar from './components/SearchBar';
 import ResultsDisplay from './components/ResultsDisplay';
 import Loader from './components/Loader';
-import ApiKeyModal from './components/ApiKeyModal';
 import TrainAiModal from './components/TrainAiModal';
-import { BookmarkIcon, PaintBrushIcon, BrainIcon } from './components/icons/Icons';
+import { BookmarkIcon, BrainIcon } from './components/icons/Icons';
 import InitialSuggestions from './components/InitialSuggestions';
 import PasswordModal from './components/PasswordModal';
-import ContentPlanModal from './components/ContentPlanModal';
 import ChannelPlanModal from './components/ChannelPlanModal';
 import ErrorModal from './components/ErrorModal';
 import NotificationCenter from './components/NotificationCenter';
 import LibraryModal from './components/LibraryModal';
 import Auth from './components/Auth';
 import { keyFindingTranscript, nicheKnowledgeBase, parseKnowledgeBaseForSuggestions } from './data/knowledgeBase';
-import { exportVideoIdeasToTxt, exportNicheToTxt } from './utils/export';
+import { exportNicheToTxt } from './utils/export';
 import { themes, Theme } from './theme';
 
 export type ApiKeyStatus = 'idle' | 'checking' | 'valid' | 'invalid';
@@ -88,31 +86,26 @@ const App: React.FC = () => {
   const [competitionLevel, setCompetitionLevel] = useState<FilterLevel>('all');
   const [sustainabilityLevel, setSustainabilityLevel] = useState<FilterLevel>('all');
   
-  // Persistence states
-  const [apiKeys, setApiKeys] = useState<string[]>(() => {
-    const saved = localStorage.getItem('yt_finder_gemini_keys');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [openAiApiKeys, setOpenAiApiKeys] = useState<string[]>(() => {
-    const saved = localStorage.getItem('yt_finder_openai_keys');
-    return saved ? JSON.parse(saved) : [];
-  });
   const [savedNiches, setSavedNiches] = useState<Niche[]>(() => {
     const saved = localStorage.getItem('yt_finder_saved_niches');
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [apiKeyStatuses, setApiKeyStatuses] = useState<ApiKeyStatus[]>([]);
-  const [openAiApiKeyStatuses, setOpenAiApiKeyStatuses] = useState<ApiKeyStatus[]>([]);
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
   const [isTrainAiModalOpen, setIsTrainAiModalOpen] = useState<boolean>(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState<boolean>(false);
+  const [isChannelPlanModalOpen, setIsChannelPlanModalOpen] = useState<boolean>(false);
+  const [activePlanNiche, setActivePlanNiche] = useState<Niche | null>(null);
+  
   const [trainingChatHistory, setTrainingChatHistory] = useState<ChatMessage[]>(defaultTrainingHistory);
   const [isTrainingLoading, setIsTrainingLoading] = useState<boolean>(false);
   const [trainingPassword, setTrainingPassword] = useState<string>('111000');
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
   const [passwordModalMode, setPasswordModalMode] = useState<'login' | 'change'>('login');
-  const [channelPlanCache, setChannelPlanCache] = useState<Record<string, string>>({});
+  
+  const [channelPlanCache, setChannelPlanCache] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('yt_finder_channel_plans');
+    return saved ? JSON.parse(saved) : {};
+  });
   const [generatingChannelPlan, setGeneratingChannelPlan] = useState<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
   const currentTheme = themes[theme] || themes.teal;
@@ -124,35 +117,15 @@ const App: React.FC = () => {
     { value: 'factory', label: 'Factory (Xưởng nội dung)' }
   ];
 
-  const checkAndSetAllApiKeys = async (geminiKeys: string[], openaiKeys: string[]) => {
-      if (geminiKeys.length > 0) {
-        setApiKeyStatuses(geminiKeys.map(() => 'checking'));
-        const results = await Promise.all(geminiKeys.map(k => validateApiKey(k)));
-        setApiKeyStatuses(results.map(v => v ? 'valid' : 'invalid'));
-      }
-      if (openaiKeys.length > 0) {
-        setOpenAiApiKeyStatuses(openaiKeys.map(() => 'checking'));
-        const results = await Promise.all(openaiKeys.map(k => validateOpenAiApiKey(k)));
-        setOpenAiApiKeyStatuses(results.map(v => v ? 'valid' : 'invalid'));
-      }
-  };
-
-  // Sync to localStorage
-  useEffect(() => { localStorage.setItem('yt_finder_gemini_keys', JSON.stringify(apiKeys)); }, [apiKeys]);
-  useEffect(() => { localStorage.setItem('yt_finder_openai_keys', JSON.stringify(openAiApiKeys)); }, [openAiApiKeys]);
   useEffect(() => { localStorage.setItem('yt_finder_saved_niches', JSON.stringify(savedNiches)); }, [savedNiches]);
+  useEffect(() => { localStorage.setItem('yt_finder_channel_plans', JSON.stringify(channelPlanCache)); }, [channelPlanCache]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsAuthChecked(true); });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (_event === 'SIGNED_OUT') { setApiKeys([]); setOpenAiApiKeys([]); setSavedNiches([]); setTrainingChatHistory(defaultTrainingHistory); } });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (_event === 'SIGNED_OUT') { setSavedNiches([]); setTrainingChatHistory(defaultTrainingHistory); } });
     const savedPass = localStorage.getItem('trainingPassword');
     if (savedPass) setTrainingPassword(savedPass);
     
-    // Initial check on load
-    if (apiKeys.length > 0 || openAiApiKeys.length > 0) {
-      checkAndSetAllApiKeys(apiKeys, openAiApiKeys);
-    }
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -183,12 +156,34 @@ const App: React.FC = () => {
     setSavedNiches(prev => prev.filter(n => n.niche_name.original !== nicheName));
   };
   
-  const handleTrainAiMessage = async (message: string, files: File[]) => {
-    const isGemini = selectedModel.startsWith('gemini');
-    if (isGemini && !apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) {
-        return setError({ title: 'Yêu cầu API Key', body: 'Cần ít nhất một API Key Gemini hợp lệ để huấn luyện.', actionText: 'Cài đặt', onAction: () => setIsApiKeyModalOpen(true) });
+  const handleGenerateChannelPlan = async (niche: Niche, detailed: boolean = false) => {
+    const nicheName = niche.niche_name.original;
+    
+    if (channelPlanCache[nicheName] && !detailed) {
+        setActivePlanNiche(niche);
+        setIsChannelPlanModalOpen(true);
+        return;
     }
 
+    setGeneratingChannelPlan(prev => new Set(prev).add(nicheName));
+    try {
+        const result = await generateChannelPlan(niche, trainingChatHistory, { isMoreDetailed: detailed });
+        setChannelPlanCache(prev => ({ ...prev, [nicheName]: result }));
+        setActivePlanNiche(niche);
+        setIsChannelPlanModalOpen(true);
+        addNotification(detailed ? "Đã cập nhật kế hoạch chi tiết!" : "Đã tạo kế hoạch xây kênh thành công!", "success");
+    } catch (err: any) {
+        setError({ title: "Lỗi tạo kế hoạch", body: err.message });
+    } finally {
+        setGeneratingChannelPlan(prev => {
+            const next = new Set(prev);
+            next.delete(nicheName);
+            return next;
+        });
+    }
+  };
+
+  const handleTrainAiMessage = async (message: string, files: File[]) => {
     setIsTrainingLoading(true);
     const fileParts = await Promise.all(files.map(fileToGenerativePart));
     const newUserMessage: ChatMessage = { role: 'user', parts: [{ text: message }, ...fileParts] };
@@ -196,14 +191,7 @@ const App: React.FC = () => {
     setTrainingChatHistory(updatedHistory);
 
     try {
-        let aiResponse: string;
-        if (isGemini) {
-            const { result } = await getTrainingResponse(updatedHistory, apiKeys, (i) => {});
-            aiResponse = result;
-        } else {
-            const { result } = await getTrainingResponseWithOpenAI(updatedHistory, openAiApiKeys, selectedModel, (i) => {});
-            aiResponse = result;
-        }
+        const aiResponse = await getTrainingResponse(updatedHistory);
         setTrainingChatHistory(prev => [...prev, { role: 'model', parts: [{ text: aiResponse }] }]);
     } catch (err: any) {
         setError({ title: 'Lỗi huấn luyện', body: err.message });
@@ -213,8 +201,6 @@ const App: React.FC = () => {
   };
 
   const runAnalysis = async (idea: string, isNewSearch: boolean, isLoadMore: boolean = false) => {
-    const isGemini = selectedModel.startsWith('gemini');
-    if (isGemini && !apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) return setError({ title: 'Yêu cầu API Key', body: 'Vui lòng cấu hình API Key Gemini hợp lệ.', actionText: 'Cài đặt', onAction: () => setIsApiKeyModalOpen(true) });
     if (!idea.trim()) return;
 
     if (isLoadMore) setIsLoadingMore(true); else { setIsLoading(true); setAnalysisResult(null); }
@@ -224,10 +210,10 @@ const App: React.FC = () => {
     try {
       let result: AnalysisResult;
       if (analysisType === 'direct' && !isLoadMore) {
-        ({ result } = await analyzeKeywordDirectly(idea, market, apiKeys, trainingChatHistory, (i) => {}, productionType));
+        result = await analyzeKeywordDirectly(idea, market, trainingChatHistory, productionType);
       } else { 
         const options = { countToGenerate: parseInt(numResults), productionType, filters: { interest: interestLevel, monetization: monetizationLevel, competition: competitionLevel, sustainability: sustainabilityLevel } };
-        ({ result } = await analyzeNicheIdea(idea, market, apiKeys, trainingChatHistory, options, (i) => {}));
+        result = await analyzeNicheIdea(idea, market, trainingChatHistory, options);
       }
       setAnalysisResult(prev => isLoadMore && prev ? { niches: [...prev.niches, ...result.niches] } : result);
       setAnalysisDepth(p => isNewSearch ? 1 : p + 1);
@@ -250,7 +236,6 @@ const App: React.FC = () => {
           <BookmarkIcon />
           {savedNiches.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-[10px] flex items-center justify-center rounded-full text-white font-bold">{savedNiches.length}</span>}
         </button>
-        <button onClick={() => setIsApiKeyModalOpen(true)} className="px-4 py-2 bg-teal-600 rounded-md text-sm font-bold">API</button>
       </header>
       
       <main className="container mx-auto px-4 py-16 flex flex-col items-center">
@@ -331,7 +316,7 @@ const App: React.FC = () => {
                 onExportNiche={(n) => exportNicheToTxt(n)}
                 isDirectAnalysis={analysisType === 'direct'}
                 theme={theme}
-                onGenerateChannelPlan={() => {}}
+                onGenerateChannelPlan={handleGenerateChannelPlan}
                 generatingChannelPlan={generatingChannelPlan}
                 channelPlanCache={channelPlanCache}
               />
@@ -340,9 +325,18 @@ const App: React.FC = () => {
         </div>
       </main>
       
+      <ChannelPlanModal 
+        isOpen={isChannelPlanModalOpen} 
+        onClose={() => setIsChannelPlanModalOpen(false)} 
+        planContent={activePlanNiche ? channelPlanCache[activePlanNiche.niche_name.original] : null} 
+        activeNiche={activePlanNiche} 
+        theme={theme} 
+        onGenerateMoreDetailedPlan={() => activePlanNiche && handleGenerateChannelPlan(activeNiche, true)} 
+        isLoadingMore={activePlanNiche ? generatingChannelPlan.has(activePlanNiche.niche_name.original) : false} 
+      />
+      
       <TrainAiModal isOpen={isTrainAiModalOpen} onClose={() => setIsTrainAiModalOpen(false)} chatHistory={trainingChatHistory} onSendMessage={handleTrainAiMessage} isLoading={isTrainingLoading} onChangePassword={() => { setPasswordModalMode('change'); setIsPasswordModalOpen(true); }} selectedModel={selectedModel} theme={theme} />
       <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} verifyPassword={(p) => p === trainingPassword} mode={passwordModalMode} theme={theme} onSuccess={(newPass) => { if (passwordModalMode === 'login') { setIsPasswordModalOpen(false); setIsTrainAiModalOpen(true); } else if (newPass) { setTrainingPassword(newPass); localStorage.setItem('trainingPassword', newPass); setIsPasswordModalOpen(false); } }} />
-      <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSaveAndCheckGemini={async (keys) => { setApiKeys(keys); await checkAndSetAllApiKeys(keys, openAiApiKeys); }} onSaveAndCheckOpenAI={async (keys) => { setOpenAiApiKeys(keys); await checkAndSetAllApiKeys(apiKeys, keys); }} onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} onDeleteKey={(i) => setApiKeys(p => p.filter((_, idx) => idx !== i))} onDeleteOpenAiKey={(i) => setOpenAiApiKeys(p => p.filter((_, idx) => idx !== i))} currentApiKeys={apiKeys} activeApiKeyIndex={null} apiKeyStatuses={apiKeyStatuses} currentOpenAiApiKeys={openAiApiKeys} openAiApiKeyStatuses={openAiApiKeyStatuses} activeOpenAiApiKeyIndex={null} theme={theme} />
       <LibraryModal 
         isOpen={isLibraryModalOpen} 
         onClose={() => setIsLibraryModalOpen(false)} 
@@ -365,7 +359,6 @@ const App: React.FC = () => {
               if (Array.isArray(imported)) {
                 setSavedNiches(prev => {
                   const combined = [...prev, ...imported];
-                  // Unique by original name
                   return combined.filter((v, i, a) => a.findIndex(t => (t.niche_name.original === v.niche_name.original)) === i);
                 });
                 addNotification("Đã nhập thư viện thành công", 'success');
@@ -375,7 +368,7 @@ const App: React.FC = () => {
           reader.readAsText(file);
         }} 
         onUseNiche={(n) => { setUserInput(n.niche_name.original); handleAnalysis(); setIsLibraryModalOpen(false); }} 
-        onViewChannelPlan={() => {}} 
+        onViewChannelPlan={(n) => handleGenerateChannelPlan(n)} 
         theme={theme} 
       />
       <ErrorModal isOpen={!!error} onClose={() => setError(null)} title={error?.title || 'Lỗi'} theme={theme}>{error?.body}</ErrorModal>
