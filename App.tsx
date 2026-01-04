@@ -24,15 +24,6 @@ import { themes, Theme } from './theme';
 
 export type ApiKeyStatus = 'idle' | 'checking' | 'valid' | 'invalid';
 
-async function fileToGenerativePart(file: File): Promise<Part> {
-  const base64EncodedData = await new Promise<string>((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-    reader.readAsDataURL(file);
-  });
-  return { inlineData: { data: base64EncodedData, mimeType: file.type } };
-}
-
 const FilterDropdown: React.FC<{ label: string; value: FilterLevel; onChange: (value: FilterLevel) => void; disabled: boolean; tooltipText: string; theme: Theme; }> = ({ label, value, onChange, disabled, tooltipText, theme }) => (
     <div className="relative group">
         <label className="block text-xs font-medium text-gray-400 mb-1">{label}</label>
@@ -84,7 +75,6 @@ const App: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3-pro-preview');
   const [analysisType, setAnalysisType] = useState<'direct' | 'related'>('related');
   const [theme, setTheme] = useState<string>('teal');
-  const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
   const [interestLevel, setInterestLevel] = useState<FilterLevel>('all');
   const [monetizationLevel, setMonetizationLevel] = useState<FilterLevel>('all');
   const [competitionLevel, setCompetitionLevel] = useState<FilterLevel>('all');
@@ -94,28 +84,11 @@ const App: React.FC = () => {
   const [openAiApiKeys, setOpenAiApiKeys] = useState<string[]>([]);
   const [openAiApiKeyStatuses, setOpenAiApiKeyStatuses] = useState<ApiKeyStatus[]>([]);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
-  const [isTrainAiModalOpen, setIsTrainAiModalOpen] = useState<boolean>(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState<boolean>(false);
-  const [trainingChatHistory, setTrainingChatHistory] = useState<ChatMessage[]>([]);
-  const [isTrainingLoading, setIsTrainingLoading] = useState<boolean>(false);
-  const [trainingPassword, setTrainingPassword] = useState<string>('');
-  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
-  const [passwordModalMode, setPasswordModalMode] = useState<'login' | 'change'>('login');
-  const [contentPlan, setContentPlan] = useState<ContentPlanResult | null>(null);
-  const [isContentPlanModalOpen, setIsContentPlanModalOpen] = useState<boolean>(false);
-  const [generatingNiches, setGeneratingNiches] = useState<Set<string>>(new Set());
-  const [generatingVideoIdeas, setGeneratingVideoIdeas] = useState<Set<string>>(new Set());
-  const [activeNicheForContentPlan, setActiveNicheForContentPlan] = useState<Niche | null>(null);
-  const [isContentPlanLoadingMore, setIsContentPlanLoadingMore] = useState<boolean>(false);
-  const [generatingChannelPlan, setGeneratingChannelPlan] = useState<Set<string>>(new Set());
-  const [isChannelPlanModalOpen, setIsChannelPlanModalOpen] = useState<boolean>(false);
-  const [channelPlanContent, setChannelPlanContent] = useState<string | null>(null);
-  const [activeNicheForChannelPlan, setActiveNicheForChannelPlan] = useState<Niche | null>(null);
+  const [trainingChatHistory, setTrainingChatHistory] = useState<ChatMessage[]>(defaultTrainingHistory);
   const [channelPlanCache, setChannelPlanCache] = useState<Record<string, string>>({});
-  const [isGeneratingMoreDetailedPlan, setIsGeneratingMoreDetailedPlan] = useState<boolean>(false);
+  const [generatingChannelPlan, setGeneratingChannelPlan] = useState<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
-  const themeDropdownRef = useRef<HTMLDivElement>(null);
   const currentTheme = themes[theme] || themes.teal;
 
   const markets = ['Quốc tế', 'US/Canada', 'Anh', 'Úc', 'Đức', 'Pháp', 'Việt Nam', 'Nhật', 'Hàn', 'Custom'];
@@ -149,7 +122,6 @@ const App: React.FC = () => {
     const suggestionsPool = parseKnowledgeBaseForSuggestions(nicheKnowledgeBase);
     const placeholderSuggestions = shuffleArray(suggestionsPool).slice(0, 3);
     setSearchPlaceholder(`ví dụ: '${placeholderSuggestions[0]}', '${placeholderSuggestions[1]}'`);
-    setTrainingPassword(localStorage.getItem('trainingPassword') || '111000');
   }, [isAuthChecked]);
   
   const runAnalysis = async (idea: string, isNewSearch: boolean, isLoadMore: boolean = false) => {
@@ -164,12 +136,10 @@ const App: React.FC = () => {
     try {
       let result: AnalysisResult;
       if (analysisType === 'direct' && !isLoadMore) {
-        if (isGemini) ({ result } = await analyzeKeywordDirectly(idea, market, apiKeys, trainingChatHistory, (i) => {}, productionType));
-        else throw new Error("Chưa hỗ trợ OpenAI cho mô hình này.");
+        ({ result } = await analyzeKeywordDirectly(idea, market, apiKeys, trainingChatHistory, (i) => {}, productionType));
       } else { 
         const options = { countToGenerate: parseInt(numResults), productionType, filters: { interest: interestLevel, monetization: monetizationLevel, competition: competitionLevel, sustainability: sustainabilityLevel } };
-        if (isGemini) ({ result } = await analyzeNicheIdea(idea, market, apiKeys, trainingChatHistory, options, (i) => {}));
-        else throw new Error("Chưa hỗ trợ OpenAI cho mô hình này.");
+        ({ result } = await analyzeNicheIdea(idea, market, apiKeys, trainingChatHistory, options, (i) => {}));
       }
       setAnalysisResult(prev => isLoadMore && prev ? { niches: [...prev.niches, ...result.niches] } : result);
       setAnalysisDepth(p => isNewSearch ? 1 : p + 1);
@@ -177,8 +147,6 @@ const App: React.FC = () => {
   };
 
   const handleAnalysis = () => runAnalysis(userInput, true);
-  const handleDevelopIdea = (idea: string) => runAnalysis(idea, false);
-  const handleLoadMore = () => runAnalysis(userInput, false, true);
 
   if (!isAuthChecked) return <div className="min-h-screen bg-gray-900 flex items-center justify-center"><Loader /></div>;
 
@@ -199,6 +167,18 @@ const App: React.FC = () => {
           <SearchBar userInput={userInput} setUserInput={setUserInput} handleAnalysis={handleAnalysis} isLoading={isLoading} placeholder={searchPlaceholder} theme={currentTheme} />
           
           <div className="bg-gray-800/50 p-6 rounded-xl border border-gray-700 space-y-6 text-left">
+            {/* Loại phân tích - Restored */}
+            <div className="flex items-center justify-center gap-8 py-2 border-b border-gray-700/50">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input type="radio" name="analysisType" checked={analysisType === 'related'} onChange={() => setAnalysisType('related')} className={`w-4 h-4 ${currentTheme.radio} bg-gray-700 border-gray-600`} />
+                <span className={`text-sm font-medium transition-colors ${analysisType === 'related' ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'}`}>Tìm chủ đề liên quan</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input type="radio" name="analysisType" checked={analysisType === 'direct'} onChange={() => setAnalysisType('direct')} className={`w-4 h-4 ${currentTheme.radio} bg-gray-700 border-gray-600`} />
+                <span className={`text-sm font-medium transition-colors ${analysisType === 'direct' ? 'text-white' : 'text-gray-400 group-hover:text-gray-300'}`}>Phân tích key này</span>
+              </label>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs text-gray-400 mb-1">Mô hình sản xuất</label>
@@ -239,26 +219,26 @@ const App: React.FC = () => {
             {isLoading ? 'Đang phân tích...' : 'Phân Tích Ý Tưởng'}
           </button>
 
-          <div ref={suggestionsRef}>
+          <div>
             {isLoading ? <Loader /> : analysisResult ? (
               <ResultsDisplay 
                 result={analysisResult} 
-                onDevelop={handleDevelopIdea}
+                onDevelop={(idea) => runAnalysis(idea, false)}
                 analysisDepth={analysisDepth}
-                onLoadMore={handleLoadMore}
+                onLoadMore={() => runAnalysis(userInput, false, true)}
                 isLoadingMore={isLoadingMore}
                 savedNiches={savedNiches}
-                onUseNiche={(n) => {}}
-                onViewPlan={(n) => {}}
-                generatingNiches={generatingNiches}
+                onUseNiche={() => {}}
+                onViewPlan={() => {}}
+                generatingNiches={new Set()}
                 numResults={numResults}
-                onGenerateVideoIdeas={(n) => {}}
-                generatingVideoIdeas={generatingVideoIdeas}
+                onGenerateVideoIdeas={() => {}}
+                generatingVideoIdeas={new Set()}
                 onExportVideoIdeas={() => {}}
                 onExportNiche={() => {}}
                 isDirectAnalysis={analysisType === 'direct'}
                 theme={theme}
-                onGenerateChannelPlan={(n) => {}}
+                onGenerateChannelPlan={() => {}}
                 generatingChannelPlan={generatingChannelPlan}
                 channelPlanCache={channelPlanCache}
               />
