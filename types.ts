@@ -1,3 +1,4 @@
+
 // Fix: Define the types used throughout the application.
 export interface Part {
   text?: string;
@@ -42,11 +43,18 @@ export interface VideoIdea {
     draft_content: string;
 }
 
+export type ProductionType = 'faceless' | 'personal' | 'factory';
+
 export interface Niche {
   niche_name: BilingualText;
   description: string;
   audience_demographics: string;
   analysis: AnalysisMetrics;
+  production_analysis: {
+    suitability_score: number;
+    reasoning: string;
+    scalability: string;
+  };
   content_strategy: string;
   video_ideas?: VideoIdea[];
   channel_plan_content?: string;

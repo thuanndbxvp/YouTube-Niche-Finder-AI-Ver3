@@ -19,7 +19,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ userInput, setUserInput, handleAn
   };
   
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full">
       <div className="relative w-full">
         <input
           type="text"
