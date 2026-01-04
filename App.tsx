@@ -9,7 +9,7 @@ import ResultsDisplay from './components/ResultsDisplay';
 import Loader from './components/Loader';
 import ApiKeyModal from './components/ApiKeyModal';
 import TrainAiModal from './components/TrainAiModal';
-import { BookmarkIcon, PaintBrushIcon } from './components/icons/Icons';
+import { BookmarkIcon, PaintBrushIcon, BrainIcon } from './components/icons/Icons';
 import InitialSuggestions from './components/InitialSuggestions';
 import PasswordModal from './components/PasswordModal';
 import ContentPlanModal from './components/ContentPlanModal';
@@ -23,6 +23,15 @@ import { exportVideoIdeasToTxt, exportNicheToTxt } from './utils/export';
 import { themes, Theme } from './theme';
 
 export type ApiKeyStatus = 'idle' | 'checking' | 'valid' | 'invalid';
+
+async function fileToGenerativePart(file: File): Promise<Part> {
+  const base64EncodedData = await new Promise<string>((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+    reader.readAsDataURL(file);
+  });
+  return { inlineData: { data: base64EncodedData, mimeType: file.type } };
+}
 
 const FilterDropdown: React.FC<{ label: string; value: FilterLevel; onChange: (value: FilterLevel) => void; disabled: boolean; tooltipText: string; theme: Theme; }> = ({ label, value, onChange, disabled, tooltipText, theme }) => (
     <div className="relative group">
@@ -84,8 +93,13 @@ const App: React.FC = () => {
   const [openAiApiKeys, setOpenAiApiKeys] = useState<string[]>([]);
   const [openAiApiKeyStatuses, setOpenAiApiKeyStatuses] = useState<ApiKeyStatus[]>([]);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
+  const [isTrainAiModalOpen, setIsTrainAiModalOpen] = useState<boolean>(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState<boolean>(false);
   const [trainingChatHistory, setTrainingChatHistory] = useState<ChatMessage[]>(defaultTrainingHistory);
+  const [isTrainingLoading, setIsTrainingLoading] = useState<boolean>(false);
+  const [trainingPassword, setTrainingPassword] = useState<string>('111000');
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState<boolean>(false);
+  const [passwordModalMode, setPasswordModalMode] = useState<'login' | 'change'>('login');
   const [channelPlanCache, setChannelPlanCache] = useState<Record<string, string>>({});
   const [generatingChannelPlan, setGeneratingChannelPlan] = useState<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
@@ -114,6 +128,8 @@ const App: React.FC = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setIsAuthChecked(true); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); if (_event === 'SIGNED_OUT') { setApiKeys([]); setOpenAiApiKeys([]); setSavedNiches([]); setTrainingChatHistory(defaultTrainingHistory); } });
+    const savedPass = localStorage.getItem('trainingPassword');
+    if (savedPass) setTrainingPassword(savedPass);
     return () => subscription.unsubscribe();
   }, []);
 
@@ -124,6 +140,35 @@ const App: React.FC = () => {
     setSearchPlaceholder(`ví dụ: '${placeholderSuggestions[0]}', '${placeholderSuggestions[1]}'`);
   }, [isAuthChecked]);
   
+  const handleTrainAiMessage = async (message: string, files: File[]) => {
+    const isGemini = selectedModel.startsWith('gemini');
+    if (isGemini && !apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) {
+        return setError({ title: 'Yêu cầu API Key', body: 'Cần ít nhất một API Key Gemini hợp lệ để huấn luyện.', actionText: 'Cài đặt', onAction: () => setIsApiKeyModalOpen(true) });
+    }
+
+    setIsTrainingLoading(true);
+    const fileParts = await Promise.all(files.map(fileToGenerativePart));
+    const newUserMessage: ChatMessage = { role: 'user', parts: [{ text: message }, ...fileParts] };
+    const updatedHistory = [...trainingChatHistory, newUserMessage];
+    setTrainingChatHistory(updatedHistory);
+
+    try {
+        let aiResponse: string;
+        if (isGemini) {
+            const { result } = await getTrainingResponse(updatedHistory, apiKeys, (i) => {});
+            aiResponse = result;
+        } else {
+            const { result } = await getTrainingResponseWithOpenAI(updatedHistory, openAiApiKeys, selectedModel, (i) => {});
+            aiResponse = result;
+        }
+        setTrainingChatHistory(prev => [...prev, { role: 'model', parts: [{ text: aiResponse }] }]);
+    } catch (err: any) {
+        setError({ title: 'Lỗi huấn luyện', body: err.message });
+    } finally {
+        setIsTrainingLoading(false);
+    }
+  };
+
   const runAnalysis = async (idea: string, isNewSearch: boolean, isLoadMore: boolean = false) => {
     const isGemini = selectedModel.startsWith('gemini');
     if (isGemini && !apiKeys.some((_, i) => apiKeyStatuses[i] === 'valid')) return setError({ title: 'Yêu cầu API Key', body: 'Vui lòng cấu hình API Key Gemini hợp lệ.', actionText: 'Cài đặt', onAction: () => setIsApiKeyModalOpen(true) });
@@ -155,6 +200,9 @@ const App: React.FC = () => {
       <NotificationCenter notifications={notifications} onRemove={(id) => setNotifications(p => p.filter(n => n.id !== id))} />
       <header className="absolute top-0 right-0 p-4 z-10 flex items-center gap-2">
         <Auth session={session} theme={currentTheme} />
+        <button onClick={() => { setPasswordModalMode('login'); setIsPasswordModalOpen(true); }} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-sm hover:bg-gray-700 transition-colors flex items-center gap-2">
+            <BrainIcon /> <span className="hidden md:inline">Train AI Tool</span>
+        </button>
         <button onClick={() => setIsLibraryModalOpen(true)} className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-md text-sm"><BookmarkIcon /></button>
         <button onClick={() => setIsApiKeyModalOpen(true)} className="px-4 py-2 bg-teal-600 rounded-md text-sm font-bold">API</button>
       </header>
@@ -167,7 +215,6 @@ const App: React.FC = () => {
           <SearchBar userInput={userInput} setUserInput={setUserInput} handleAnalysis={handleAnalysis} isLoading={isLoading} placeholder={searchPlaceholder} theme={currentTheme} />
           
           <div className="bg-gray-800/50 p-6 rounded-xl border border-gray-700 space-y-6 text-left">
-            {/* Loại phân tích - Restored */}
             <div className="flex items-center justify-center gap-8 py-2 border-b border-gray-700/50">
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input type="radio" name="analysisType" checked={analysisType === 'related'} onChange={() => setAnalysisType('related')} className={`w-4 h-4 ${currentTheme.radio} bg-gray-700 border-gray-600`} />
@@ -247,6 +294,8 @@ const App: React.FC = () => {
         </div>
       </main>
       
+      <TrainAiModal isOpen={isTrainAiModalOpen} onClose={() => setIsTrainAiModalOpen(false)} chatHistory={trainingChatHistory} onSendMessage={handleTrainAiMessage} isLoading={isTrainingLoading} onChangePassword={() => { setPasswordModalMode('change'); setIsPasswordModalOpen(true); }} selectedModel={selectedModel} theme={theme} />
+      <PasswordModal isOpen={isPasswordModalOpen} onClose={() => setIsPasswordModalOpen(false)} verifyPassword={(p) => p === trainingPassword} mode={passwordModalMode} theme={theme} onSuccess={(newPass) => { if (passwordModalMode === 'login') { setIsPasswordModalOpen(false); setIsTrainAiModalOpen(true); } else if (newPass) { setTrainingPassword(newPass); localStorage.setItem('trainingPassword', newPass); setIsPasswordModalOpen(false); } }} />
       <ApiKeyModal isOpen={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} onSaveAndCheckGemini={async (keys) => { setApiKeys(keys); await checkAndSetAllApiKeys(keys, openAiApiKeys); }} onSaveAndCheckOpenAI={async (keys) => { setOpenAiApiKeys(keys); await checkAndSetAllApiKeys(apiKeys, keys); }} onRecheckAll={() => checkAndSetAllApiKeys(apiKeys, openAiApiKeys)} onDeleteKey={(i) => setApiKeys(p => p.filter((_, idx) => idx !== i))} onDeleteOpenAiKey={(i) => setOpenAiApiKeys(p => p.filter((_, idx) => idx !== i))} currentApiKeys={apiKeys} activeApiKeyIndex={null} apiKeyStatuses={apiKeyStatuses} currentOpenAiApiKeys={openAiApiKeys} openAiApiKeyStatuses={openAiApiKeyStatuses} activeOpenAiApiKeyIndex={null} theme={theme} />
       <LibraryModal isOpen={isLibraryModalOpen} onClose={() => setIsLibraryModalOpen(false)} savedNiches={savedNiches} onDeleteNiche={() => {}} onDeleteAll={() => {}} onExport={() => {}} onImport={() => {}} onUseNiche={(n) => { setUserInput(n.niche_name.original); handleAnalysis(); }} onViewChannelPlan={() => {}} theme={theme} />
       <ErrorModal isOpen={!!error} onClose={() => setError(null)} title={error?.title || 'Lỗi'} theme={theme}>{error?.body}</ErrorModal>
