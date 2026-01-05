@@ -331,18 +331,70 @@ export const analyzeKeywordDirectly = async (
 };
 
 export const generateChannelPlan = async (niche: Niche, apiKeys: string[], trainingHistory: ChatMessage[], options: { isMoreDetailed?: boolean } = {}): Promise<string> => {
-    // Keep high-value tasks on Gemini 3 Pro
+    // Use Gemini 3 Pro for complex reasoning and planning
     const modelName = 'gemini-3-pro-preview';
-    const contents: Content[] = [ ...trainingHistory.map(msg => ({ role: msg.role, parts: msg.parts })), { role: 'user', parts: [{ text: `Tạo kế hoạch kênh YouTube chi tiết trong VIETNAMESE. Data: ${JSON.stringify(niche)}` }] } ];
+    
+    // STRICT System Instruction to ensure the Modal parses the output correctly.
+    // The Modal splits content based on "## " headers.
+    const systemInstruction = `You are a world-class YouTube Strategist. 
+    Create a comprehensive, professional YouTube Channel Plan in VIETNAMESE for the provided niche.
+    
+    IMPORTANT FORMATTING RULES:
+    1. Output MUST be in Markdown.
+    2. You MUST use EXACTLY the following Level 2 Headers (starting with "## ") for the sections. Do not change the text of these headers, or the UI will not render them.
+    
+    Structure:
+    ## Tóm tắt kênh
+    (Provide a mission statement and unique value proposition)
+    
+    ## Đối tượng mục tiêu
+    (Demographics, Psychographics, Pain points & Desires)
+    
+    ## Cấu trúc nội dung / Series
+    (Core content pillars, Series ideas, Formats)
+    
+    ## Lịch đăng video
+    (Frequency, Best times, Consistency plan)
+    
+    ## Chiến lược SEO và Tăng trưởng
+    (Keyword strategy, Thumbnail style, Click-through rate optimization)
+    
+    ## Thương hiệu, Giọng điệu, Phong cách hình ảnh
+    (Brand persona, Color palette vibes, Music/Editing style)
+    
+    ## Kế hoạch kiếm tiền
+    (AdSense strategy, Affiliate, Digital products, Sponsorship potential)
+    
+    ## Định hướng phát triển dài hạn
+    (Milestones for 3 months, 6 months, 1 year)
+    
+    ## Gợi ý 5 bộ tên kênh
+    (List 5 catchy, available-sounding channel names)
+    
+    Do not use JSON. Use rich text, bullet points, and bold text for emphasis within the sections.
+    `;
+
+    // Only include necessary history to avoid token waste or confusion, but user context is good.
+    const contents: Content[] = [ 
+        { role: 'user', parts: [{ text: `Lập kế hoạch xây kênh YouTube chi tiết cho ngách: ${JSON.stringify(niche.niche_name)}\n\nThông tin ngách: ${niche.description}` }] } 
+    ];
     
     const response = await callGeminiWithRetry(apiKeys, async (ai) => {
         return await ai.models.generateContent({
             model: modelName,
             contents: contents,
-            config: { systemInstruction: `You are a YouTube growth expert. Plan must be in VIETNAMESE with markdown headers.` }
+            config: { 
+                systemInstruction: systemInstruction,
+                // Do not enforce JSON schema here, we want Markdown text.
+            }
         });
     });
-    return response.text || '';
+
+    // Cleanup: Remove markdown code block fences if Gemini adds them
+    let cleanText = response.text || '';
+    cleanText = cleanText.replace(/^```markdown\s*/, '').replace(/^```\s*/, '').replace(/```$/, '');
+    
+    return cleanText;
 };
 
 // Placeholder for OpenAI functions
