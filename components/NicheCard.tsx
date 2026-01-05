@@ -64,13 +64,42 @@ const NicheCard: React.FC<NicheCardProps> = ({ niche, index, isSaved, onExportNi
                     <button 
                         onClick={() => onUseNiche(niche)} 
                         title={isSaved ? "Bỏ lưu" : "Lưu vào thư viện"} 
-                        className={`p-2 rounded-lg border transition-colors ${isSaved ? currentTheme.bg + ' text-white ' + currentTheme.border : 'bg-gray-700 border-transparent text-gray-300 hover:text-white'}`}
+                        className={`p-2 rounded-lg border transition-all duration-300 shadow-sm ${
+                            isSaved 
+                                ? `${currentTheme.bg} border-transparent text-white hover:brightness-110 hover:shadow-md` 
+                                : 'bg-gray-800 border-gray-600 text-gray-400 hover:bg-gray-700 hover:border-gray-400 hover:text-white'
+                        }`}
                     >
                         <BookmarkIcon />
                     </button>
-                    <button onClick={() => onExportNiche(niche)} title="Xuất file TXT" className="p-2 bg-gray-700 rounded-lg text-gray-300 hover:text-white"><DownloadIcon /></button>
-                    <button onClick={() => onGenerateChannelPlan(niche)} disabled={isGeneratingChannelPlan} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 ${currentTheme.bg} text-white`}>
-                        <ClipboardListIcon /> {hasChannelPlan ? 'Xem Kế Hoạch' : 'Lập kế hoạch xây kênh'}
+                    <button 
+                        onClick={() => onExportNiche(niche)} 
+                        title="Xuất file TXT" 
+                        className="p-2 rounded-lg border bg-gray-800 border-gray-600 text-gray-400 transition-all duration-300 shadow-sm hover:bg-gray-700 hover:border-gray-400 hover:text-white"
+                    >
+                        <DownloadIcon />
+                    </button>
+                    
+                    <button 
+                        onClick={() => onGenerateChannelPlan(niche)} 
+                        disabled={isGeneratingChannelPlan} 
+                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all duration-300 shadow-lg ${
+                            isGeneratingChannelPlan 
+                                ? 'bg-gray-600 text-gray-300 cursor-wait' 
+                                : `${currentTheme.bg} text-white hover:brightness-110 hover:shadow-xl hover:-translate-y-0.5`
+                        }`}
+                    >
+                        {isGeneratingChannelPlan ? (
+                            <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                <span>Đang lập...</span>
+                            </>
+                        ) : (
+                            <>
+                                <ClipboardListIcon />
+                                <span>{hasChannelPlan ? 'Xem Kế Hoạch' : 'Lập kế hoạch xây kênh'}</span>
+                            </>
+                        )}
                     </button>
                 </div>
             </div>
