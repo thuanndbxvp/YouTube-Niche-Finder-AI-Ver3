@@ -178,6 +178,70 @@ const App: React.FC = () => {
     setNotifications(prev => [{ id, message, type }, ...prev]);
   };
 
+  const getFriendlyErrorMessage = (error: any) => {
+    let msg = error?.message || String(error);
+    
+    // Attempt to extract clean message from JSON string
+    if (typeof msg === 'string' && msg.includes('{')) {
+        try {
+            const jsonStart = msg.indexOf('{');
+            const jsonEnd = msg.lastIndexOf('}');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+                const jsonStr = msg.substring(jsonStart, jsonEnd + 1);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.error && parsed.error.message) {
+                    msg = parsed.error.message;
+                }
+            }
+        } catch (e) {
+            // Ignore parsing error, use original message
+        }
+    }
+
+    if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("Quota exceeded")) {
+      return {
+        title: "Hết hạn mức API (Quota Exceeded)",
+        body: (
+          <div className="space-y-3">
+            <p>Hệ thống tạm thời không thể xử lý yêu cầu do API Key hiện tại đã sử dụng hết hạn mức miễn phí (Quota) của Google.</p>
+            <div className="bg-red-900/20 border border-red-700/50 p-3 rounded-lg text-sm text-gray-300">
+               <p className="font-bold text-red-400 mb-1">Gợi ý khắc phục:</p>
+               <ul className="list-disc list-inside space-y-1 pl-1">
+                 <li>Thử lại sau vài phút (nếu bị giới hạn theo phút).</li>
+                 <li>Thêm nhiều API Key khác trong phần <strong>Cấu hình API</strong> để hệ thống tự động luân chuyển.</li>
+                 <li>Kiểm tra giới hạn tại <a href="https://aistudio.google.com/" target="_blank" className="underline hover:text-white">Google AI Studio</a>.</li>
+               </ul>
+            </div>
+            <details className="text-xs text-gray-500 cursor-pointer">
+              <summary>Chi tiết lỗi kỹ thuật</summary>
+              <p className="mt-1 font-mono bg-gray-900 p-2 rounded break-all">{msg}</p>
+            </details>
+          </div>
+        ),
+        actionText: "Cấu hình API",
+        onAction: () => setIsApiKeyModalOpen(true)
+      };
+    }
+    
+    if (msg.includes("API_KEY_INVALID") || msg.includes("403")) {
+        return {
+            title: "API Key không hợp lệ",
+            body: "API Key bạn đang sử dụng không chính xác hoặc đã bị vô hiệu hóa. Vui lòng kiểm tra lại trong phần Cấu hình API.",
+            actionText: "Kiểm tra Key",
+            onAction: () => setIsApiKeyModalOpen(true)
+        };
+    }
+    
+    if (msg.includes("503") || msg.includes("Overloaded")) {
+        return {
+            title: "Server Google quá tải",
+            body: "Máy chủ Google Gemini đang bị quá tải. Vui lòng thử lại sau giây lát."
+        };
+    }
+
+    return { title: "Đã xảy ra lỗi", body: msg };
+  };
+
   const handleToggleSaveNiche = (niche: Niche) => {
     const isAlreadySaved = savedNiches.some(s => s.niche_name.original === niche.niche_name.original);
     if (isAlreadySaved) {
@@ -219,7 +283,7 @@ const App: React.FC = () => {
         setIsChannelPlanModalOpen(true);
         addNotification(detailed ? "Đã cập nhật kế hoạch chi tiết!" : "Đã tạo kế hoạch xây kênh thành công!", "success");
     } catch (err: any) {
-        setError({ title: "Lỗi tạo kế hoạch", body: err.message });
+        setError(getFriendlyErrorMessage(err));
     } finally {
         setGeneratingChannelPlan(prev => {
             const next = new Set(prev);
@@ -245,7 +309,7 @@ const App: React.FC = () => {
         const aiResponse = await getTrainingResponse(updatedHistory, apiKeys);
         setTrainingChatHistory(prev => [...prev, { role: 'model', parts: [{ text: aiResponse }] }]);
     } catch (err: any) {
-        setError({ title: 'Lỗi huấn luyện', body: err.message });
+        setError(getFriendlyErrorMessage(err));
     } finally {
         setIsTrainingLoading(false);
     }
@@ -274,7 +338,7 @@ const App: React.FC = () => {
       setAnalysisResult(prev => isLoadMore && prev ? { niches: [...prev.niches, ...result.niches] } : result);
       setAnalysisDepth(p => isNewSearch ? 1 : p + 1);
     } catch (err: any) { 
-        setError({ title: 'Lỗi', body: err.message }); 
+        setError(getFriendlyErrorMessage(err)); 
     } finally { 
       setIsLoading(false); 
       setIsLoadingMore(false); 
